@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* Custom utility fix for v4 */
+@layer base {
+  body {
+    background-color: rgb(248 250 252); /* Ye 'bg-slate-50' ka manual color hai */
+    color: rgb(15 23 42); /* Ye 'text-slate-900' hai */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Agar aapko @apply hi use karna hai toh v4 mein aise likhte hain: */
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
