@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// Backend URL check: Agar Render par hai toh wo use karega, varna localhost
+// Backend URL check: Hugging Face space ya localhost
 const backend =
   process.env.BACKEND_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000";
 
@@ -14,11 +14,16 @@ const nextConfig: NextConfig = {
         port: "8000",
         pathname: "/uploads/**",
       },
-      // Render ka images hostname allow karna zaroori hai
+      // Hugging Face Backend images allow karna zaroori hai
       {
         protocol: "https",
-        hostname: "photomall.onrender.com",
+        hostname: "gautamgovind-photomall-backend.hf.space",
         pathname: "/uploads/**",
+      },
+      {
+        protocol: "https",
+        hostname: "gautamgovind-photomall-backend.hf.space",
+        pathname: "/storage/**",
       },
     ],
   },
@@ -31,7 +36,7 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  reactStrictMode: false, // LOOP FIX: Isko temporary false kar do taaki development double calls ruk jayein
+  reactStrictMode: false, // Loop fix ke liye ye sahi hai
 };
 
 export default nextConfig;
