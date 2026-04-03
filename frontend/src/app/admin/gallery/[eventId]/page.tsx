@@ -10,7 +10,13 @@ import {
   Zap,
   RefreshCcw,
   ImageOff,
-  Download
+  Download,
+  Sparkles,
+  Share2,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  Copy
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -25,14 +31,95 @@ export default function AdminGallery({ params }: { params: Promise<{ eventId: st
     const [loading, setLoading] = useState(true);
     const [eventDetails, setEventDetails] = useState<any>(null);
     const [showQR, setShowQR] = useState(false);
+    const [quickShareEmail, setQuickShareEmail] = useState('');
+    const [sendingOtp, setSendingOtp] = useState(false);
+    const [otpMessage, setOtpMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
     // Stable Guest URL for QR Code
     const guestUrl = useMemo(() => {
         if (typeof window !== 'undefined' && eventId && eventId !== 'undefined') {
-            return `${window.location.origin}/search/${eventId}`;
+            return `${window.location.origin}/portal/event/${eventId}`;
         }
         return '';
     }, [eventId]);
+
+    // Share link with access code
+    const getShareLink = () => {
+        if (quickShareEmail) {
+            return `${window.location.origin}/portal/event/${eventId}?access=${encodeURIComponent(quickShareEmail)}`;
+        }
+        return `${window.location.origin}/portal/event/${eventId}`;
+    };
+
+    const copyShareLink = () => {
+        const link = getShareLink();
+        navigator.clipboard.writeText(link);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    // Copy guest URL
+    const copyGuestUrl = () => {
+        navigator.clipboard.writeText(guestUrl);
+        alert("✅ Link copied to clipboard!");
+    };
+
+    // Send OTP to guest
+    const sendOTPToGuest = async () => {
+        if (!quickShareEmail) {
+            setOtpMessage({ type: 'error', text: 'Please enter an email address' });
+            setTimeout(() => setOtpMessage(null), 3000);
+            return;
+        }
+        
+        if (!quickShareEmail.includes('@') || !quickShareEmail.includes('.')) {
+            setOtpMessage({ type: 'error', text: 'Please enter a valid email address' });
+            setTimeout(() => setOtpMessage(null), 3000);
+            return;
+        }
+        
+        setSendingOtp(true);
+        setOtpMessage(null);
+        
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/py/email/send-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: quickShareEmail,
+                    event_id: parseInt(eventId)
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                setOtpMessage({ 
+                    type: 'success', 
+                    text: data.message || `✅ OTP sent to ${quickShareEmail}` 
+                });
+                setQuickShareEmail('');
+                // Don't close modal, show success message
+            } else {
+                setOtpMessage({ 
+                    type: 'error', 
+                    text: data.detail || 'Failed to send OTP. Check if email is configured.' 
+                });
+            }
+        } catch (err) {
+            setOtpMessage({ 
+                type: 'error', 
+                text: 'Network error. Please make sure backend is running on port 8000.' 
+            });
+        } finally {
+            setSendingOtp(false);
+            setTimeout(() => setOtpMessage(null), 5000);
+        }
+    };
 
     const fetchGalleryData = useCallback(async () => {
         if (!eventId || eventId === 'undefined') return;
@@ -108,6 +195,14 @@ export default function AdminGallery({ params }: { params: Promise<{ eventId: st
                     </div>
                     
                     <div className="flex items-center gap-3">
+                        {/* ✅ QUICK SHARE BUTTON */}
+                        <button 
+                            onClick={() => setShowShareModal(true)} 
+                            className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 text-white text-[10px] font-black uppercase tracking-[0.2em] hover:shadow-lg transition-all"
+                        >
+                            <Share2 size={16} />
+                            Share Event
+                        </button>
                         <button 
                             onClick={fetchGalleryData} 
                             className="p-3 bg-slate-900 border border-white/5 rounded-2xl hover:bg-slate-800 transition-all" 
@@ -127,6 +222,128 @@ export default function AdminGallery({ params }: { params: Promise<{ eventId: st
                 </div>
             </header>
 
+            {/* --- Share Modal --- */}
+            {showShareModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="bg-[#0a0f1c] border border-purple-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Share2 size={20} className="text-purple-400" />
+                                Share Event: {eventDetails?.name || `Event ${eventId}`}
+                            </h3>
+                            <button onClick={() => {
+                                setShowShareModal(false);
+                                setOtpMessage(null);
+                                setQuickShareEmail('');
+                            }} className="p-1 hover:bg-zinc-800 rounded-lg">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {/* OTP Section */}
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                                    Guest email address
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="email"
+                                        value={quickShareEmail}
+                                        onChange={(e) => setQuickShareEmail(e.target.value)}
+                                        placeholder="guest@example.com"
+                                        className="flex-1 px-4 py-3 rounded-xl bg-slate-900/60 border border-white/[0.08] text-white text-sm focus:outline-none focus:border-purple-500/50"
+                                    />
+                                    <button
+                                        onClick={sendOTPToGuest}
+                                        disabled={sendingOtp}
+                                        className="px-4 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-black uppercase tracking-[0.2em] hover:shadow-lg transition-all disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {sendingOtp ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                                        Send OTP
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 mt-2">
+                                    Guest will receive OTP via email to access event photos
+                                </p>
+                            </div>
+
+                            {/* OTP Message */}
+                            {otpMessage && (
+                                <div className={`p-3 rounded-xl flex items-start gap-2 text-xs ${
+                                    otpMessage.type === 'success' 
+                                        ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                                        : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                                }`}>
+                                    {otpMessage.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                                    <p>{otpMessage.text}</p>
+                                </div>
+                            )}
+
+                            {/* Divider */}
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full border-t border-white/[0.06]"></div>
+                                </div>
+                                <div className="relative flex justify-center text-xs">
+                                    <span className="px-3 bg-[#0a0f1c] text-zinc-500 text-[9px] uppercase tracking-wider">or share directly</span>
+                                </div>
+                            </div>
+
+                            {/* Direct Link Section */}
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                                    Public gallery link
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={guestUrl}
+                                        className="flex-1 px-3 py-2 rounded-lg bg-slate-800/60 text-xs text-slate-300 border border-white/[0.05] focus:outline-none"
+                                    />
+                                    <button
+                                        onClick={copyGuestUrl}
+                                        className="px-3 py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 transition-colors"
+                                    >
+                                        <Copy size={16} />
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 mt-2">
+                                    Anyone with this link can view all event photos
+                                </p>
+                            </div>
+
+                            {/* Access Link with Email */}
+                            {quickShareEmail && (
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                                        Personalized access link
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            value={getShareLink()}
+                                            className="flex-1 px-3 py-2 rounded-lg bg-slate-800/60 text-xs text-slate-300 border border-white/[0.05] focus:outline-none"
+                                        />
+                                        <button
+                                            onClick={copyShareLink}
+                                            className="px-3 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 transition-colors"
+                                        >
+                                            {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-zinc-500 mt-2">
+                                        Guest can access without OTP (pre-authorized)
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <main className="max-w-7xl mx-auto p-6 md:p-10">
                 {/* --- QR Gateway Section --- */}
                 {showQR && (
@@ -140,10 +357,7 @@ export default function AdminGallery({ params }: { params: Promise<{ eventId: st
                             <div className="flex items-center gap-2 p-2 bg-black/40 rounded-2xl border border-white/5 text-blue-400 font-mono text-[11px]">
                                 <span className="flex-1 truncate px-3">{guestUrl}</span>
                                 <button 
-                                    onClick={() => { 
-                                        navigator.clipboard.writeText(guestUrl); 
-                                        alert("Link Copied to Clipboard!"); 
-                                    }} 
+                                    onClick={copyGuestUrl}
                                     className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-sans font-black uppercase text-[10px] hover:bg-blue-500 transition-colors"
                                 >
                                     Copy Link

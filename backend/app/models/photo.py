@@ -16,8 +16,7 @@ class Photo(Base):
     file_path = Column(String, nullable=False) # Original High-Res
     preview_path = Column(String, nullable=True) # Watermarked/Compressed
     
-    # 2. Stats (Dashboard calculations ke liye zaroori hai)
-    # Storage calculation ke liye size bytes mein store karna best practice hai
+    # 2. Stats
     original_size = Column(BigInteger, default=0) 
     
     # 3. AI Processing Logic
@@ -30,13 +29,13 @@ class Photo(Base):
     # 5. Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # --- Relationships (The Fix) ---
+    # --- Relationships ---
     
-    # Bidirectional link to Event (Isse Dashboard error solve ho jayega)
+    # Bidirectional link to Event
     event = relationship("Event", back_populates="photos")
 
-    # Link to extracted faces
-    faces = relationship(
+    # ✅ FIXED - Link to extracted faces (use "FaceEmbedding" string, not variable)
+    face_embeddings = relationship(
         "FaceEmbedding", 
         back_populates="photo", 
         cascade="all, delete-orphan"

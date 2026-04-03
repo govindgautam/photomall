@@ -231,20 +231,40 @@ export const apiClient = {
      * 5. Guest face search (AI Vector Match)
      * Maps to: POST http://127.0.0.1:8000/api/search
      */
-    searchByFace: async (eventId: string | number, file: File) => {
-        if (!eventId || eventId === 'undefined') throw new Error("Event ID is missing");
-        
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('eventId', String(eventId));
+    // ==================== PORTAL/SEARCH METHODS ====================
 
-        // Use direct backend call for heavy AI search to avoid Next dev proxy socket hangups.
-        return robustRequest(`${DIRECT_BACKEND_URL}/api/py/search`, {
-            method: 'POST',
-            body: formData,
-        });
-    },
-
+searchByFace: async (eventId: string | number, file: File, threshold?: number) => {
+    if (!eventId || eventId === 'undefined') throw new Error("Event ID is missing");
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('eventId', String(eventId));
+    
+    // Add threshold for match sensitivity (0.7 = 70% match, 0.85 = 85% match)
+    if (threshold) {
+        formData.append('threshold', threshold.toString());
+    }
+    
+    // Add guest identifier for tracking
+    const guestId = typeof window !== 'undefined' ? sessionStorage.getItem('guest_id') : null;
+    if (guestId) {
+        formData.append('identifier', guestId);
+    }
+    
+    // Add email if available (from OTP verification)
+    const guestEmail = typeof window !== 'undefined' ? sessionStorage.getItem('guest_email') : null;
+    if (guestEmail) {
+        formData.append('email', guestEmail);
+    }
+    
+    console.log(`[API] Searching faces in event ${eventId} with threshold: ${threshold || 0.75}`);
+    
+    // Use portal search endpoint
+    return robustRequest(`${DIRECT_BACKEND_URL}/api/py/portal/${eventId}/search-selfie`, {
+        method: 'POST',
+        body: formData,
+    });
+},
     /**
      * 6. Admin Bulk Photo Upload
      */

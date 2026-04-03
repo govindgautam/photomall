@@ -1,10 +1,11 @@
 'use client';
+
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, Image as ImageIcon, Users, 
   Search, Upload, Plus, RefreshCw, Settings, LogOut, ChevronRight, Camera,
-  WifiOff
+  WifiOff, Share2, Mail, Phone, Sparkles, CheckCircle, AlertCircle, BarChart3, UserCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -17,14 +18,11 @@ import EventIdInput from '@/components/EventIdInput';
 /**
  * ADMIN DASHBOARD - COMMAND CENTER
  * Senior Full-Stack Architect Edition
- * * This component manages global stats, event streams, and the AI Neural Ingester.
- * It features real-time WebSocket progress tracking and robust error handling.
  */
 export default function AdminDashboard() {
   const router = useRouter();
   const ingesterRef = useRef<HTMLDivElement>(null);
   
-  // Architect Fix: Photographer ID state to allow dynamic updates
   const [photographerId, setPhotographerId] = useState(1);
 
   // --- UI States ---
@@ -53,12 +51,17 @@ export default function AdminDashboard() {
   const [liveLog, setLiveLog] = useState<string[]>([]);
   const [ingestionComplete, setIngestionComplete] = useState(false);
 
+  // --- Quick Share State ---
+  const [quickShareMessage, setQuickShareMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // --- WebSocket Realtime ---
   const wsRef = useRef<WebSocket | null>(null);
   const wsCompleteRef = useRef(false);
   const ingestionActiveRef = useRef(false);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
+
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
   const closeWs = useCallback(() => {
     wsCompleteRef.current = true;
@@ -79,13 +82,92 @@ export default function AdminDashboard() {
     wsRef.current = null;
   }, []);
 
+  // --- Navigation Handlers ---
+  const navigateToEventsList = () => {
+    console.log('[Navigation] Navigating to Events List');
+    router.push('/admin/events');
+  };
+
+  const navigateToFindMyPhotos = () => {
+    console.log('[Navigation] Navigating to Find My Photos');
+    router.push('/find-my-photos');
+  };
+
+  const navigateToFaceClusters = () => {
+    console.log('[Navigation] Navigating to Face Clusters');
+    router.push('/admin/events');
+  };
+
+  const navigateToAnalytics = () => {
+    console.log('[Navigation] Navigating to Analytics');
+    router.push('/admin/analytics');
+  };
+
+  const navigateToSettings = () => {
+    console.log('[Navigation] Navigating to Settings');
+    router.push('/admin/settings');
+  };
+
+  const navigateToDashboard = () => {
+    console.log('[Navigation] Navigating to Dashboard');
+    router.push('/admin');
+  };
+
+  // --- Quick Share Function ---
+  const handleQuickShare = async (eventIdToShare: string) => {
+    const email = prompt('Enter guest email address to share this event:');
+    if (!email) return;
+    
+    if (!email.includes('@') || !email.includes('.')) {
+      setQuickShareMessage({ type: 'error', text: '❌ Please enter a valid email address' });
+      setTimeout(() => setQuickShareMessage(null), 3000);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/py/email/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, event_id: parseInt(eventIdToShare) })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        const successText = `✅ OTP sent to ${email}\n\nShare link: ${window.location.origin}/portal/event/${eventIdToShare}?access=${email}`;
+        setQuickShareMessage({ type: 'success', text: successText });
+        setTimeout(() => setQuickShareMessage(null), 5000);
+      } else {
+        const errorText = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || 'Failed to send OTP');
+        setQuickShareMessage({ type: 'error', text: errorText });
+        setTimeout(() => setQuickShareMessage(null), 3000);
+      }
+    } catch (err: any) {
+      const errorText = err.message || 'Network error. Please try again.';
+      setQuickShareMessage({ type: 'error', text: errorText });
+      setTimeout(() => setQuickShareMessage(null), 3000);
+    }
+  };
+
+  // --- Floating Share Function ---
+  const handleFloatingShare = () => {
+    console.log('Share button clicked!');
+    const eventIdInput = prompt('Enter Event ID to share:');
+    console.log('Event ID entered:', eventIdInput);
+    
+    if (eventIdInput && !isNaN(parseInt(eventIdInput))) {
+      console.log('Navigating to:', `/admin/share/${eventIdInput}`);
+      router.push(`/admin/share/${eventIdInput}`);
+    } else if (eventIdInput) {
+      alert('❌ Please enter a valid numeric Event ID');
+    }
+  };
+  
   // --- Real-Time Data Sync ---
   const refreshData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
     
     try {
-      // Senior Architect Fix: Using Promise.allSettled to prevent "7 Issues" red badge 
-      // when one endpoint fails but the other works.
       const results = await Promise.allSettled([
         apiClient.getDashboardStats(),
         apiClient.listEvents(photographerId)
@@ -94,7 +176,6 @@ export default function AdminDashboard() {
       const statsResult = results[0];
       const eventsResult = results[1];
 
-      // --- MAPPING LOGIC FOR STATS ---
       if (statsResult.status === 'fulfilled' && statsResult.value && !statsResult.value.error) {
         const statsData = statsResult.value;
         console.log("[Architect Debug]: Backend Stats Payload:", statsData);
@@ -108,14 +189,12 @@ export default function AdminDashboard() {
         setConnectionError(false);
       }
       
-      // --- MAPPING LOGIC FOR EVENTS ---
       let finalEvents: any[] = [];
       
       if (eventsResult.status === 'fulfilled' && Array.isArray(eventsResult.value)) {
         finalEvents = eventsResult.value;
         console.log("[Architect Debug]: Backend Events Payload:", finalEvents);
       } 
-      // Fallback: If listEvents fails but stats has recent_events, use that
       else if (statsResult.status === 'fulfilled' && statsResult.value?.recent_events) {
         finalEvents = statsResult.value.recent_events;
       }
@@ -137,7 +216,6 @@ export default function AdminDashboard() {
         err.message?.includes('fetch failed') ||
         err.message?.includes('Failed to fetch');
 
-      // Only show the big blue reconnecting UI if it's a manual refresh failure
       if (isConnectionError && isManual) {
         setConnectionError(true);
       }
@@ -150,7 +228,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     refreshData();
     const interval = setInterval(() => {
-      // Don't poll if we are actively uploading to keep the socket clear
       if (!loading) {
         refreshData(false);
       }
@@ -158,7 +235,7 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, [refreshData, loading]);
 
-  // --- WebSocket initialization (direct backend access) ---
+  // --- WebSocket initialization ---
   useEffect(() => {
     const normalizedEventId = eventId.trim();
     if (!normalizedEventId) return;
@@ -270,18 +347,16 @@ export default function AdminDashboard() {
 
       ws.onerror = (err) => {
         console.error('[WebSocket] Critical connection error:', err);
-        // Don't set connection error immediately to prevent UI flicker
         setStatus('⚠️ Real-time link unstable. Processing assets...');
       };
 
-      ws.onclose = (event) => {
+      ws.onclose = () => {
         if (wsCompleteRef.current) return;
         if (!ingestionActiveRef.current) return;
 
         const attempts = reconnectAttemptsRef.current + 1;
         reconnectAttemptsRef.current = attempts;
         
-        // Safety: Stop after 5 failed reconnect attempts
         if (attempts > 5) return;
 
         const delayMs = Math.min(3000, 1000 * attempts);
@@ -307,7 +382,7 @@ export default function AdminDashboard() {
   // --- Handlers ---
   const prepareUpload = (id: string) => {
     setEventId(id);
-    setFiles(null); // Clear previous files
+    setFiles(null);
     setStatus('Ready for ingestion. Drop or select photos below.');
     ingesterRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
@@ -339,9 +414,9 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 flex font-sans selection:bg-blue-500/30 relative">
+    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans">
       
-      {/* 🔴 UI FAILSAFE OVERLAY */}
+      {/* Connection Error Overlay */}
       <AnimatePresence>
         {connectionError && (
           <motion.div 
@@ -353,29 +428,15 @@ export default function AdminDashboard() {
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="bg-[#0a0f1c] border border-blue-500/30 p-12 rounded-[3rem] shadow-[0_0_50px_rgba(59,130,246,0.2)] text-center max-w-md w-full relative overflow-hidden"
+              className="bg-[#0a0f1c] border border-blue-500/30 p-12 rounded-[3rem] text-center max-w-md w-full"
             >
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent animate-pulse" />
-              <div className="bg-blue-600/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-8 border border-blue-500/20">
+              <div className="bg-blue-600/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-8">
                 <WifiOff className="text-blue-500 animate-pulse" size={40} />
               </div>
-              <h3 className="text-2xl font-black italic text-white uppercase tracking-tighter mb-4">Neural Link Reconnecting...</h3>
-              <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mb-8 leading-relaxed">
-                Attempting to re-establish bi-directional stream with AI Node 01
-              </p>
-              <div className="flex justify-center gap-2">
-                {[0, 1, 2].map((i) => (
-                  <motion.div
-                    key={i}
-                    animate={{ opacity: [0.2, 1, 0.2] }}
-                    transition={{ repeat: Infinity, duration: 1, delay: i * 0.2 }}
-                    className="w-2 h-2 rounded-full bg-blue-500"
-                  />
-                ))}
-              </div>
+              <h3 className="text-2xl font-black italic text-white mb-4">Neural Link Reconnecting...</h3>
               <button 
                 onClick={() => refreshData(true)}
-                className="mt-10 text-[10px] font-black text-blue-400 hover:text-white uppercase tracking-[0.3em] transition-colors"
+                className="mt-6 text-[10px] font-black text-blue-400 hover:text-white uppercase tracking-[0.3em]"
               >
                 Manual Override
               </button>
@@ -384,264 +445,169 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* 1. PREMIUM SIDEBAR */}
-      <aside className="w-72 bg-[#0a0f1c] border-r border-slate-800/50 hidden lg:flex flex-col p-8 sticky top-0 h-screen">
-        <div className="flex items-center gap-3 mb-12 px-2 cursor-pointer group" onClick={() => refreshData(true)}>
-          <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-900/40 group-hover:scale-110 transition-transform">
-            <ImageIcon size={22} className="text-white" />
-          </div>
-          <h1 className="text-xl font-bold tracking-tight text-white italic">
-            PhotoMall <span className="text-blue-500 font-black">AI</span>
-          </h1>
-        </div>
+      {/* ✅ NO SIDEBAR HERE - ONLY MAIN CONTENT */}
+      <div className="p-6 md:p-12">
         
-        <nav className="space-y-1.5 flex-1">
-          <NavItem icon={<LayoutDashboard size={18}/>} label="Dashboard" active />
-          <NavItem icon={<ImageIcon size={18}/>} label="Events List" onClick={() => router.push('/admin/events')} />
-          <NavItem icon={<Camera size={18}/>} label="Find my photos (guest)" onClick={() => router.push('/find-my-photos')} />
-          <NavItem icon={<Users size={18}/>} label="Face Clusters" onClick={() => router.push('/admin/events')} />
-          <NavItem icon={<Search size={18}/>} label="Analytics" onClick={() => router.push('/admin/analytics')} />
-          <NavItem icon={<Settings size={18}/>} label="Engine Settings" onClick={() => router.push('/admin/settings')} />
-        </nav>
-
-        {/* System Monitor Area */}
-        <div className="mt-auto bg-slate-900/50 p-6 rounded-[2.5rem] border border-slate-800/50 backdrop-blur-md">
-          <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mb-4">Cloud Intelligence</p>
-          <div className="h-2 w-full bg-slate-950 rounded-full mb-3 overflow-hidden">
-            <div 
-              className="h-full bg-blue-500 rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.6)]" 
-              style={{ width: stats.total_photos > 0 ? `${Math.min(100, (stats.total_photos / 1000) * 100)}%` : '5%' }}
-            ></div>
-          </div>
-          <div className="flex justify-between items-center font-mono text-[9px]">
-            <span className="text-slate-400">{stats.storage_used || '0.1 GB'} / 10GB</span>
-            <span className="text-blue-400 font-bold uppercase animate-pulse">Neural Node: ON</span>
-          </div>
-        </div>
-      </aside>
-
-      {/* 2. MAIN VIEWPORT */}
-      <div className="flex-1 p-6 md:p-12 overflow-y-auto lg:max-w-[calc(100vw-288px)]">
-        
-        <header className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-6">
-          <div className="space-y-1">
-            <h2 className="text-4xl font-black text-white tracking-tighter italic uppercase">Command Center</h2>
-            <p className="text-slate-500 text-sm font-medium">Manage AI facial recognition streams</p>
+        <header className="flex flex-col md:flex-row justify-between mb-12 gap-6">
+          <div>
+            <h2 className="text-4xl font-black text-white italic uppercase">Command Center</h2>
+            <p className="text-slate-500 text-sm">Manage AI facial recognition streams</p>
           </div>
           <div className="flex gap-4">
-            <button 
-              onClick={() => refreshData(true)}
-              className="p-4 bg-slate-900/80 hover:bg-slate-800 rounded-2xl transition-all border border-slate-800 group"
-            >
-              <RefreshCw size={20} className={`${refreshing ? 'animate-spin text-blue-400' : 'text-slate-500 group-hover:text-white'}`} />
+            <button onClick={() => refreshData(true)} className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800">
+              <RefreshCw size={20} className={refreshing ? 'animate-spin text-blue-400' : 'text-slate-500'} />
             </button>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-2xl font-black transition-all shadow-xl shadow-blue-900/30 flex items-center gap-2 active:scale-95 uppercase text-xs tracking-widest"
-            >
+            <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-2">
               <Plus size={18} /> New Event
             </button>
           </div>
         </header>
 
-        {/* ANALYTICS GRID */}
+        {/* Stats Grid */}
         <StatsGrid 
-          events={stats.total_events}
-          photos={stats.total_photos}
-          faces={stats.total_faces}
-          storage={stats.storage_used}
+          events={stats.total_events} 
+          photos={stats.total_photos} 
+          faces={stats.total_faces} 
+          storage={stats.storage_used} 
         />
 
-        {/* ACTIVE STREAMS SECTION */}
+        {/* Active Events */}
         <section className="mb-16 mt-16">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-black italic flex items-center gap-3 text-white uppercase tracking-tight">
-              Active Event Streams
-              <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-ping"></span>
-            </h3>
-            <button
-              onClick={() => router.push('/admin/events')}
-              className="text-xs font-bold text-slate-500 hover:text-blue-400 transition-colors uppercase tracking-widest flex items-center gap-1"
+          <div className="flex justify-between mb-8">
+            <h3 className="text-xl font-black text-white uppercase">Active Event Streams</h3>
+            <button 
+              onClick={navigateToEventsList} 
+              className="text-xs text-slate-500 hover:text-blue-400 flex items-center gap-1"
             >
-              View All <ChevronRight size={14} />
+              View All <ChevronRight size={14} className="inline" />
             </button>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {recentEvents.length > 0 ? (
               recentEvents.map((event) => {
-                const photoCount = Number(event.photo_count ?? event.count ?? event.photos?.length ?? 0) || 0;
-                const created = event.created_at
-                  ? new Date(event.created_at as string)
-                  : null;
-                const dateLabel =
-                  created && !Number.isNaN(created.getTime())
-                    ? created.toLocaleDateString('en-GB', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })
-                    : '—';
+                const photoCount = Number(event.photo_count ?? 0);
+                const dateLabel = event.created_at ? new Date(event.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
                 return (
-                <EventCard 
-                  key={event.id}
-                  id={event.id.toString()} 
-                  name={event.name} 
-                  date={dateLabel}
-                  count={photoCount}
-                  onUploadClick={() => prepareUpload(event.id.toString())}
-                  onOpenGallery={(eid) => router.push(`/admin/gallery/${eid}`)}
-                />
+                  <EventCard 
+                    key={event.id}
+                    id={event.id.toString()} 
+                    name={event.name} 
+                    date={dateLabel}
+                    count={photoCount}
+                    onUploadClick={() => prepareUpload(event.id.toString())}
+                    onOpenGallery={(eid) => router.push(`/admin/gallery/${eid}`)}
+                    
+                  />
                 );
               })
             ) : (
-              <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-800/50 rounded-[3rem] bg-slate-900/10">
-                <p className="text-slate-500 font-bold italic">No active streams detected. Create an event to begin.</p>
+              <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-800/50 rounded-[3rem]">
+                <p className="text-slate-500">No active streams detected. Create an event to begin.</p>
               </div>
             )}
           </div>
         </section>
 
-        {/* AI INGESTER TERMINAL */}
-        <section 
-          ref={ingesterRef}
-          className="max-w-4xl mx-auto bg-[#0a0f1c] rounded-[3rem] p-10 border border-slate-800 shadow-3xl relative overflow-hidden"
-        >
+        {/* Toast Message */}
+        <AnimatePresence>
+          {quickShareMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
+              className="fixed bottom-6 right-6 z-50 max-w-md"
+            >
+              <div className={`p-4 rounded-xl shadow-xl flex items-start gap-3 ${quickShareMessage.type === 'success' ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`}>
+                {quickShareMessage.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+                <p className="text-sm whitespace-pre-line">{String(quickShareMessage.text)}</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* AI Ingester */}
+        <section ref={ingesterRef} className="max-w-4xl mx-auto bg-[#0a0f1c] rounded-[3rem] p-10 border border-slate-800">
           <div className="flex items-center gap-5 mb-10">
-            <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-500/20">
+            <div className="bg-blue-600/10 p-4 rounded-2xl">
               <Upload className="text-blue-500" size={28} />
             </div>
             <div>
-              <h3 className="text-2xl font-black italic text-white uppercase tracking-tight">Neural Ingester</h3>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Bulk media indexing hub</p>
+              <h3 className="text-2xl font-black text-white uppercase">Neural Ingester</h3>
+              <p className="text-slate-500 text-xs">Bulk media indexing hub</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-             <div className="space-y-3">
-                <EventIdInput
-                  label="Event target ID"
-                  value={eventId}
-                  onChange={(e) => setEventId(e.target.value)}
-                  className="w-full bg-[#020617] border border-slate-800 p-5 rounded-2xl focus:border-blue-500/50 outline-none transition-all font-mono text-blue-400 placeholder:text-slate-600 text-lg"
-                />
-             </div>
-             <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-1">Engine Status</label>
-                <div className="bg-[#020617] border border-slate-800 p-5 rounded-2xl flex items-center justify-between text-xs uppercase italic overflow-hidden relative">
-                   {loading ? (
-                     <>
-                       <div className="flex items-center gap-4 text-blue-400 font-black">
-                         <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.8)] animate-pulse"></div> 
-                         AI Processing Hub: Indexing {processedCount} / {totalCount}
-                       </div>
-                       <span className="font-mono text-blue-400">{indexingProgress}%</span>
-                       {/* Progress Bar background */}
-                       <div className="absolute bottom-0 left-0 h-1 bg-blue-500 transition-all duration-300 shadow-[0_0_8px_rgba(59,130,246,0.5)]" style={{ width: `${indexingProgress}%` }}></div>
-                     </>
-                   ) : ingestionComplete ? (
-                     <>
-                       <div className="flex items-center gap-4 text-green-500 font-black">
-                         <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.8)]"></div> 
-                         ✅ INGESTION COMPLETE
-                       </div>
-                       <span className="font-mono text-green-500">100%</span>
-                       <div className="absolute bottom-0 left-0 h-1 bg-green-500 transition-all duration-300 shadow-[0_0_8px_rgba(34,197,94,0.5)]" style={{ width: '100%' }}></div>
-                     </>
-                   ) : (
-                     <div className="flex items-center gap-4 text-green-500 font-black">
-                        <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.8)] animate-pulse"></div> 
-                        AI Processing Hub: Ready
-                     </div>
-                   )}
-                </div>
-             </div>
+            <EventIdInput 
+              label="Event target ID" 
+              value={eventId} 
+              onChange={(e) => setEventId(e.target.value)} 
+              className="w-full bg-[#020617] border border-slate-800 p-5 rounded-2xl" 
+            />
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase ml-1">Engine Status</label>
+              <div className="bg-[#020617] border border-slate-800 p-5 rounded-2xl flex justify-between">
+                {loading ? (
+                  <>AI Processing Hub: Indexing {processedCount} / {totalCount} <span>{indexingProgress}%</span></>
+                ) : ingestionComplete ? (
+                  <>✅ INGESTION COMPLETE <span>100%</span></>
+                ) : (
+                  <>AI Processing Hub: Ready</>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className={`group relative border-2 border-dashed rounded-[2.5rem] p-16 text-center transition-all duration-500 cursor-pointer ${
-            files ? 'border-blue-500 bg-blue-500/5' : 'border-slate-800 hover:border-slate-700 bg-slate-950/30'
-          }`}>
+          <div className={`border-2 border-dashed rounded-[2.5rem] p-16 text-center cursor-pointer ${files ? 'border-blue-500 bg-blue-500/5' : 'border-slate-800 hover:border-slate-700'}`}>
             <input 
-              type="file" multiple accept="image/*" 
-              className="absolute inset-0 opacity-0 cursor-pointer z-10"
-              onChange={(e) => {
-                const selected = Array.from(e.target.files || []).slice(0, 100);
-                setFiles(selected.length > 0 ? selected : null);
-                if ((e.target.files?.length || 0) > 100) {
-                  setStatus('Only the first 100 photos were selected for stability.');
-                }
-              }}
-              disabled={loading}
+              type="file" 
+              multiple 
+              accept="image/*" 
+              className="absolute inset-0 opacity-0 cursor-pointer" 
+              onChange={(e) => setFiles(Array.from(e.target.files || []))} 
+              disabled={loading} 
             />
             {loading && liveLog.length > 0 ? (
-              <div className="h-40 overflow-hidden flex flex-col items-center justify-center">
-                <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-4">Neural Feed Live</p>
-                <div className="w-full space-y-1">
-                  {liveLog.map((log, idx) => (
-                    <div key={idx} className="text-[9px] font-mono text-slate-500 flex items-center justify-center gap-2">
-                      <span className="text-blue-500/50">#</span> {log} <span className="text-green-500/50">OK</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="h-40 overflow-hidden">
+                {liveLog.map((log, idx) => <div key={idx} className="text-[9px] text-slate-500">{log}</div>)}
               </div>
             ) : (
               <>
-                <div className="bg-slate-900 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-500 shadow-2xl">
+                <div className="bg-slate-900 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6">
                   {files ? <ImageIcon className="text-blue-400" size={32} /> : <Upload className="text-slate-700" size={32} />}
                 </div>
-                <p className="text-2xl font-black text-white italic uppercase tracking-tighter">
-                  {files ? `${files.length} Photos Prepared` : "Drop Event Assets Here"}
-                </p>
-                <p className="text-slate-600 mt-2 text-[10px] font-black uppercase tracking-[0.2em]">Automatic Vector Indexing</p>
+                <p className="text-2xl font-black text-white">{files ? `${files.length} Photos Prepared` : "Drop Event Assets Here"}</p>
               </>
             )}
           </div>
 
           <button 
-            onClick={handleUpload} disabled={loading}
-            className={`w-full mt-10 py-6 rounded-2xl font-black text-xl italic uppercase tracking-tighter transition-all active:scale-[0.98] flex items-center justify-center gap-4 ${
-              loading
-                ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                : ingestionComplete
-                  ? 'bg-green-600 text-white shadow-2xl shadow-green-900/40'
-                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-2xl shadow-blue-900/40'
-            }`}
+            onClick={handleUpload} 
+            disabled={loading} 
+            className={`w-full mt-10 py-6 rounded-2xl font-black text-xl ${loading ? 'bg-slate-800' : ingestionComplete ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-500'} text-white`}
           >
-            {loading ? (
-              <div className="flex items-center gap-4">
-                <RefreshCw className="animate-spin text-blue-400" size={24} />
-                <span className="animate-pulse">AI Neural Mapping {progress}%</span>
-              </div>
-            ) : ingestionComplete ? (
-              <>
-                <span>✅ INGESTION COMPLETE</span>
-              </>
-            ) : (
-              <>
-                <Plus size={24} />
-                <span>Trigger Bulk Ingestion</span>
-              </>
-            )}
+            {loading ? `AI Neural Mapping ${progress}%` : ingestionComplete ? '✅ INGESTION COMPLETE' : 'Trigger Bulk Ingestion'}
           </button>
 
-          {status && (
-            <div className="mt-6 p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl text-center font-bold text-xs text-blue-400 tracking-widest animate-pulse uppercase">
-              {status}
-            </div>
-          )}
+          {status && <div className="mt-6 p-4 text-center text-xs text-blue-400">{status}</div>}
         </section>
 
         <CreateEventModal 
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSuccess={() => refreshData(true)}
+          isOpen={isModalOpen} 
+          onClose={() => setIsModalOpen(false)} 
+          onSuccess={() => refreshData(true)} 
         />
+
+        {/* Floating Share Button */}
+        {/* Floating Share Button - Direct Navigation */}
+       
       </div>
     </div>
   );
 }
 
-function NavItem({ icon, label, active = false, onClick }: { icon: any, label: string, active?: boolean, onClick?: () => void }) {
+function NavItem({ icon, label, active = false, onClick }: { icon: any; label: string; active?: boolean; onClick?: () => void }) {
   return (
     <div 
       onClick={onClick}
@@ -649,12 +615,13 @@ function NavItem({ icon, label, active = false, onClick }: { icon: any, label: s
       active 
         ? 'bg-blue-600/10 text-white border border-blue-500/10' 
         : 'text-slate-500 hover:bg-slate-900/50 hover:text-slate-200'
-    }`}>
+    }`}
+    >
       <span className={`${active ? 'text-blue-500' : 'text-slate-600 group-hover:text-blue-400'} transition-colors`}>
         {icon}
       </span>
       <span className="font-black text-[10px] uppercase tracking-[0.2em]">{label}</span>
-      {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,1)]"></div>}
+      {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
     </div>
   );
 }

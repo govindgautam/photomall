@@ -7,8 +7,10 @@ import {
   ArrowRight, 
   Activity,
   Layers,
-  LayoutGrid
+  LayoutGrid,
+  Share2
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface EventCardProps {
   id: string;
@@ -20,7 +22,13 @@ interface EventCardProps {
 }
 
 export default function EventCard({ id, name, date, count, onUploadClick, onOpenGallery }: EventCardProps) {
+  const router = useRouter();
   const displayCount = Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    router.push(`/admin/share/${id}`);
+  };
 
   return (
     <div 
@@ -37,7 +45,15 @@ export default function EventCard({ id, name, date, count, onUploadClick, onOpen
           <div className="bg-[#111827] p-3.5 rounded-2xl border border-slate-800 group-hover:border-blue-500/30 group-hover:scale-110 transition-all duration-300 shadow-inner">
             <ImageIcon className="text-blue-500 group-hover:text-blue-400" size={24} />
           </div>
-          <div className="flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            {/* ✅ SHARE BUTTON - Navigates to Share Page */}
+            <button
+              onClick={handleShare}
+              className="bg-gradient-to-r from-purple-600 to-pink-500 p-2.5 rounded-xl hover:shadow-lg transition-all duration-300"
+              title="Share this event with guests"
+            >
+              <Share2 size={16} className="text-white" />
+            </button>
             <span className="text-[9px] font-black bg-slate-900/80 px-3 py-1.5 rounded-lg text-slate-400 tracking-[0.2em] uppercase border border-slate-700/50 group-hover:text-blue-300 transition-colors">
               REF: #{id}
             </span>
@@ -66,7 +82,6 @@ export default function EventCard({ id, name, date, count, onUploadClick, onOpen
             <p className="text-2xl font-black text-white group-hover:text-blue-400 transition-colors">
               {displayCount.toLocaleString()}
             </p>
-            {/* Subtle progress background */}
             <div className="absolute bottom-0 left-0 h-[2px] bg-blue-500/20 w-full" />
           </div>
           

@@ -27,15 +27,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  async rewrites() {
-    return [
-      {
-        // Sabhi /api/py requests ko backend par redirect karega
-        source: "/api/py/:path*",
-        destination: `${backend}/api/py/:path*`,
-      },
-    ];
-  },
+// next.config.js example
+async rewrites() {
+  return [
+    {
+      source: '/api/py/:path*',
+      destination: 'http://127.0.0.1:8000/api/py/:path*',
+    },
+  ]
+},
   reactStrictMode: false, // Loop fix ke liye ye sahi hai
 };
 

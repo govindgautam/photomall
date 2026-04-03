@@ -387,6 +387,8 @@ def get_event_details(event_id: int, db: Session = Depends(get_db)):
     }
 
 # --- 6. ENHANCED ADMIN STATS ENDPOINT ---
+# Replace the existing get_enhanced_admin_stats function with this:
+
 @router.get("/admin/stats", response_model=DashboardStats)
 def get_enhanced_admin_stats(
     db: Session = Depends(get_db),
@@ -408,18 +410,16 @@ def get_enhanced_admin_stats(
         start_time = time.time()
         
         # 2. Get Statistics with NULL Handling
-        # Architect Tip: Scalar results should always have a fallback 'or 0'
         total_events = db.query(func.count(Event.id)).scalar() or 0
         total_photos = db.query(func.count(Photo.id)).scalar() or 0
         total_faces = db.query(func.count(FaceEmbedding.id)).scalar() or 0
         
         # 3. Storage Calculation (Safe from NULL)
-        # Directly calculating here to ensure no type mismatch
         total_bytes = db.query(func.sum(Photo.original_size)).scalar() or 0
         storage_mb = total_bytes / (1024 * 1024)
         formatted_storage = f"{storage_mb:.2f} MB"
         
-        # 4. Recent Events Query
+        # 4. Recent Events Query - FIXED: Added total_size and status
         recent_events_raw = (
             db.query(
                 Event.id,
@@ -428,7 +428,8 @@ def get_enhanced_admin_stats(
                 Event.date,
                 Event.created_at,
                 Event.photographer_id,
-                func.count(Photo.id).label('photo_count')
+                func.count(Photo.id).label('photo_count'),
+                func.sum(Photo.original_size).label('total_size')  # ✅ ADDED
             )
             .outerjoin(Photo, Event.id == Photo.event_id)
             .group_by(Event.id)
@@ -442,27 +443,59 @@ def get_enhanced_admin_stats(
             raw_date = event_row.date or event_row.created_at
             iso_date = raw_date.isoformat() if raw_date and hasattr(raw_date, 'isoformat') else None
             
+            # Calculate status based on photos
+            photo_count = int(event_row.photo_count or 0)
+            total_bytes_event = int(event_row.total_size or 0)
+            total_size_mb = f"{(total_bytes_event / (1024 * 1024)):.2f} MB" if total_bytes_event > 0 else "0.00 MB"
+            
+            # Determine status
+            if photo_count == 0:
+                status = "pending"
+            else:
+                # Check if any unprocessed photos
+                unprocessed = db.query(Photo).filter(
+                    Photo.event_id == event_row.id,
+                    Photo.is_processed == False
+                ).count()
+                status = "processing" if unprocessed > 0 else "completed"
+            
             recent_events.append({
                 "id": event_row.id,
                 "name": event_row.name or "Untitled Event",
                 "location": event_row.location or "Standard Site",
                 "date": iso_date,
-                "created_at": iso_date,
-                "photo_count": int(event_row.photo_count or 0),
-                "photographer_id": event_row.photographer_id
+                "photo_count": photo_count,
+                "total_size": total_size_mb,  # ✅ ADDED - required field
+                "status": status,  # ✅ ADDED - required field
+                "qr_code_path": None  # Optional field
             })
         
-        # 5. Build Final Object
+        # 5. Calculate processing vs completed events
+        processing_events = 0
+        completed_events = 0
+        
+        for event in recent_events_raw:
+            # Check if event has unprocessed photos
+            unprocessed = db.query(Photo).filter(
+                Photo.event_id == event.id,
+                Photo.is_processed == False
+            ).count()
+            if unprocessed > 0:
+                processing_events += 1
+            elif event.photo_count > 0:
+                completed_events += 1
+        
+        # 6. Build Final Object
         avg_photos = (total_photos / total_events) if total_events > 0 else 0.0
 
         dashboard_stats = {
             "total_events": int(total_events),
             "total_photos": int(total_photos),
             "total_faces": int(total_faces),
-            "storage_used": formatted_storage, # String formatted: "15.50 MB"
+            "storage_used": formatted_storage,
             "recent_events": recent_events,
-            "processing_events": 0, # Add logic here if status field exists
-            "completed_events": int(total_events),
+            "processing_events": processing_events,
+            "completed_events": completed_events,
             "average_photos_per_event": round(float(avg_photos), 2)
         }
         
@@ -474,11 +507,15 @@ def get_enhanced_admin_stats(
         
     except Exception as e:
         logger.error(f"❌ Admin stats failed: {str(e)}", exc_info=True)
-        # Minimal Fallback object
+        # Minimal Fallback object with correct schema
         return DashboardStats(
-            total_events=0, total_photos=0, total_faces=0,
-            storage_used="0.00 MB", recent_events=[],
-            processing_events=0, completed_events=0, 
+            total_events=0, 
+            total_photos=0, 
+            total_faces=0,
+            storage_used="0.00 MB", 
+            recent_events=[],  # Empty list is fine
+            processing_events=0, 
+            completed_events=0, 
             average_photos_per_event=0.0
         )
 

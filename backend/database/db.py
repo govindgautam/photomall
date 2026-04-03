@@ -28,3 +28,10 @@ try:
     connection.close()
 except Exception as e:
     print("Database connection failed:", e)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

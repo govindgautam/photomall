@@ -79,103 +79,113 @@ def get_db():
 async def process_photo_full_task_optimized(photo_id: int, original_path: str, filename: str, event_id: int, original_size: int = 0):
     """
     Senior Architect: Optimized single photo processing with parallel operations.
-    Updated: Uses Semaphore to limit CPU choking and prevent socket hang-ups.
     """
+    print(f"🔥🔥🔥 PROCESSING STARTED for Photo {photo_id} 🔥🔥🔥")
+    print(f"   Path: {original_path}")
+    print(f"   Event: {event_id}")
     async with photo_processing_semaphore:
         db = SessionLocal()
-        embeddings_to_save = [] # Define early for finally block safety
+        embeddings_to_save = []
         preview_size = 0
         preview_path = None
 
     try:
-        # Step 1: Parallel image processing and watermarking
-        logger.info(f"🚀 Step 1: Processing image for Photo ID {photo_id}")
+        logger.info(f"🚀 Starting processing for Photo ID {photo_id}, path: {original_path}")
         
+        # Check if file exists
+        if not os.path.exists(original_path):
+            logger.error(f"❌ File not found: {original_path}")
+            return
+        
+        # Step 1: Watermark
+        logger.info(f"📸 Step 1: Watermarking for Photo ID {photo_id}")
         watermark_task = asyncio.to_thread(
             process_and_watermark, original_path, filename, watermark_text="Govind Photography"
         )
         
-        # Step 2: Optimized face detection with preprocessing
-        logger.info(f"🚀 Step 2: Neural Face Extraction for Photo ID {photo_id}")
+        # Step 2: Face detection with error handling
+        logger.info(f"👤 Step 2: Face detection for Photo ID {photo_id}")
         
-        preprocessed_img = await asyncio.to_thread(preprocess_image_for_face_detection, original_path)
-        if preprocessed_img is not None:
-            faces = await asyncio.to_thread(extract_faces, original_path, max_faces=10)
-        else:
-            faces = []
-            
-        # Wait for watermarking to complete
-        preview_path = await watermark_task
-        preview_size = os.path.getsize(preview_path) if preview_path and os.path.exists(preview_path) else 0
-        
-        await asyncio.sleep(0.01) 
-        
-        # Step 3: Optimized embedding generation
-        face_detected = False
         try:
+            # Direct face extraction
+            faces = await asyncio.to_thread(extract_faces, original_path, max_faces=10)
+            logger.info(f"👤 Face detection result: {len(faces)} face(s) found")
+            
             if faces:
-                logger.info(f"🔍 Detected {len(faces)} face(s) in Photo ID {photo_id}")
-                face_crops = [face.get("face") for face in faces if face.get("face") is not None]
-                
-                if face_crops:
-                    face_detected = True
-                    await asyncio.sleep(0.01) 
-                    
-                    try:
-                        embedding_results = await asyncio.to_thread(
-                            generate_embeddings_batch,
-                            [(face, f"photo_{photo_id}_face_{i}") for i, face in enumerate(face_crops)]
-                        )
-                    except Exception as emb_e:
-                        logger.error(f"DeepFace.represent mapping failed: {emb_e}")
-                        embedding_results = []
-                    
-                    for identifier, embedding in embedding_results:
-                        if embedding is not None:
-                            embeddings_to_save.append(
-                                FaceEmbedding(photo_id=photo_id, embedding=embedding.tolist())
-                            )
-                            logger.info(f"✅ Neural Index Created: {identifier}")
-                else:
-                    logger.warning(f"⚠️ Face crops empty for Photo ID {photo_id}")
-            else:
-                logger.warning(f"⚠️ No faces detected for Photo ID {photo_id}")
-                
-        except Exception as e:
-            logger.error(f"❌ Embedding extraction failed for Photo {photo_id}: {e}")
-            face_detected = False
+                for i, face in enumerate(faces):
+                    logger.info(f"   Face {i+1}: confidence={face.get('confidence', 0)}, area={face.get('area', 0)}")
+        except Exception as face_error:
+            logger.error(f"❌ Face detection error: {face_error}")
+            faces = []
         
-        # Step 4: Optimized database operations
+        # Step 3: Wait for watermark
+        preview_path = await watermark_task
+        if preview_path and os.path.exists(preview_path):
+            preview_size = os.path.getsize(preview_path)
+            logger.info(f"✅ Watermark complete: {preview_path}")
+        
+        # Step 4: Generate embeddings
+        # In process_photo_full_task_optimized function, around line 150-170:
+
+# Step 4: Generate embeddings
+        if faces:
+            logger.info(f"🧠 Step 4: Generating embeddings for {len(faces)} faces")
+            face_crops = [face.get("face") for face in faces if face.get("face") is not None]
+        
+        if face_crops:
+            try:
+                embedding_results = await asyncio.to_thread(
+                    generate_embeddings_batch,
+                    [(face, f"photo_{photo_id}_face_{i}") for i, face in enumerate(face_crops)]
+                )
+                
+                for identifier, embedding in embedding_results:
+                    if embedding is not None:
+                        # ✅ FIX: embedding is already a list from generate_embeddings_batch
+                        embeddings_to_save.append(
+                            FaceEmbedding(photo_id=photo_id, embedding=embedding, event_id=event_id)
+                        )
+                        logger.info(f"✅ Embedding generated for {identifier}")
+                    else:
+                        logger.warning(f"⚠️ Failed to generate embedding for {identifier}")
+            except Exception as emb_e:
+                logger.error(f"❌ Embedding batch error: {emb_e}")
+        # Step 5: Save to database
         if embeddings_to_save:
             db.add_all(embeddings_to_save)
-            db.commit() 
-            logger.info(f"💾 Saved {len(embeddings_to_save)} face vectors to Database")
+            db.commit()
+            logger.info(f"💾 Saved {len(embeddings_to_save)} face embeddings to DB")
+        else:
+            logger.warning(f"⚠️ No embeddings to save for Photo ID {photo_id}")
         
+        # Step 6: Update photo record
         photo = db.query(Photo).filter(Photo.id == photo_id).first()
         if photo:
             photo.preview_path = preview_path
-            photo.is_processed = True # CRITICAL: Always True to finish UI loading
+            photo.is_processed = True
             
-            if not face_detected:
-                photo.processing_status = "Processed (No Face)"
+            if not faces:
+                photo.processing_status = "No Face Detected"
             else:
-                photo.processing_status = "Face Detected"
+                photo.processing_status = f"{len(embeddings_to_save)} Face(s) Detected"
                 
             db.add(photo)
             db.commit()
+            logger.info(f"✅ Photo {photo_id} updated: {photo.processing_status}")
         
-        # Step 5: FAISS update (RAM ONLY - No Disk Save here to prevent lag)
+        # Step 7: Update FAISS index
         if embeddings_to_save:
-            # Sirf RAM mein add kar rahe hain taaki search turant kaam kare
             await asyncio.to_thread(add_embeddings_to_index, embeddings_to_save)
-            logger.info(f"🧠 FAISS RAM Index updated for Photo {photo_id}")
+            logger.info(f"🧠 FAISS index updated with {len(embeddings_to_save)} embeddings")
         
     except Exception as e:
         logger.error(f"❌ CRITICAL TASK FAILURE for Photo {photo_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
     finally:
         db.close()
-        # Step 6: WebSocket progress update (Always fires)
+        # WebSocket update
         try:
             await manager.update_progress(
                 str(event_id), 
@@ -185,7 +195,6 @@ async def process_photo_full_task_optimized(photo_id: int, original_path: str, f
             )
         except Exception as ws_err:
             logger.error(f"WebSocket update failed: {ws_err}")
-
 # --- LEGACY PROCESSING TASK (for compatibility) ---
 async def process_photo_full_task(photo_id: int, original_path: str, filename: str, event_id: int, original_size: int = 0):
     """
@@ -330,14 +339,14 @@ async def upload_bulk_optimized(
         logger.info(f"🚀 Processing queued for {uploaded_count} photos safely")
         
         for photo_data in uploaded_photos:
-            background_tasks.add_task(
-                process_photo_full_task_optimized,
-                photo_data['id'],
-                photo_data['original_path'],
-                photo_data['filename'],
-                event_id,
-                photo_data['file_size']
-            )
+           background_tasks.add_task(
+    process_photo_full_task_optimized,
+    photo_data['id'],
+    photo_data['original_path'],
+    photo_data['filename'],
+    event_id,
+    photo_data['file_size']
+)
         
         # Step 3: Update event metadata
         event.count = db.query(func.count(Photo.id)).filter(Photo.event_id == event_id).scalar()
