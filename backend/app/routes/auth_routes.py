@@ -172,6 +172,40 @@ def get_current_user(
     raise HTTPException(status_code=501, detail="Use get_current_user from auth_utils")
 
 
+@router.post("/register")
+def register(
+    request: SignupRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Register new user account (alias for signup but matches requested payload)
+    """
+    name = request.name.strip()
+    email = request.email.strip().lower()
+    password = request.password
+    
+    if not name or not password:
+        raise HTTPException(status_code=400, detail="Name and password are required")
+        
+    # Check if user exists
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create new user
+    hashed_password = get_hashed_password(password)
+    new_user = User(
+        name=name,
+        email=email,
+        password=hashed_password,
+        role="photographer"
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return {"success": True, "message": "User registered successfully"}
+
 @router.post("/logout")
 def logout():
     """
