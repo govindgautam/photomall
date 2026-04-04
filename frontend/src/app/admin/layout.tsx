@@ -12,8 +12,7 @@ import {
   Upload,
   Sparkles,
   ChevronLeft,
-  ChevronRight,
-  Share2
+  ChevronRight
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -49,7 +48,6 @@ export default function AdminLayout({
     { icon: Camera, label: 'Find Photos', path: '/find-my-photos' },
     { icon: Users, label: 'Face Clusters', path: '/admin/events' },
     { icon: BarChart3, label: 'Analytics', path: '/admin/analytics' },
-    { icon: Share2, label: 'Share Event', path: '/admin/share' },
     { icon: Settings, label: 'Settings', path: '/admin/settings' },
   ];
 

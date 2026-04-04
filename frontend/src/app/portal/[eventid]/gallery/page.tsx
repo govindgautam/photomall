@@ -5,7 +5,7 @@ import MasonryGrid from '@/components/portal/MasonryGrid';
 import Lightbox from '@/components/portal/Lightbox';
 import { 
   Loader2, ArrowLeft, Download, Share2, Sparkles, Image as ImageIcon, 
-  X, AlertCircle, Mail, Phone, Camera, Upload, Sliders, CheckCircle 
+  X, AlertCircle, Mail, Phone, Camera, Upload, Sliders, CheckCircle, Bell, BellRing
 } from 'lucide-react';
 import { getImageUrl } from '@/lib/utils';
 import Webcam from 'react-webcam';
@@ -56,6 +56,7 @@ function SelfieSearchModal({
       });
       
       const data = await response.json();
+      console.log('🔍 Search response:', data);
       
       if (data.success && data.photos && data.photos.length > 0) {
         setSuccess(`✨ Found ${data.photos.length} matching photos!`);
@@ -230,6 +231,10 @@ export default function GalleryPage() {
   const [hasAccess, setHasAccess] = useState<boolean | null>(null);
   const [eventInfo, setEventInfo] = useState<{ name: string; photoCount: number } | null>(null);
   const [showSelfieSearch, setShowSelfieSearch] = useState(false);
+  
+  // ✅ Subscribe State
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
@@ -270,6 +275,7 @@ export default function GalleryPage() {
           setGuestId(guestIdValue);
           
           loadPhotos();
+          checkSubscriptionStatus();
         } else {
           setHasAccess(false);
           setError('You do not have access to this event.');
@@ -284,7 +290,50 @@ export default function GalleryPage() {
     verifyAccess();
   }, [eventid, accessCode, router, BACKEND_URL]);
 
+  // ✅ Check subscription status
+  const checkSubscriptionStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/py/notifications/subscribers/${eventid}`);
+      const data = await res.json();
+      if (data.subscribers && data.subscribers.includes(guestIdentifier)) {
+        setIsSubscribed(true);
+      }
+    } catch (err) {
+      console.error('Check subscription error:', err);
+    }
+  };
+
+  // ✅ Subscribe handler
+  const handleSubscribe = async () => {
+    if (!guestIdentifier) {
+      alert('Please login first');
+      return;
+    }
+    
+    setSubscribing(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/py/notifications/subscribe/${eventid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: guestIdentifier })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsSubscribed(true);
+        alert('You will receive email notifications for this event!');
+      } else {
+        alert(data.message || 'Failed to subscribe');
+      }
+    } catch (err) {
+      console.error('Subscribe error:', err);
+      alert('Network error. Please try again.');
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
   const loadPhotos = () => {
+    console.log('🔍 loadPhotos called, isSearchResult:', isSearchResult);
     if (isSearchResult) {
       loadSearchResults();
     } else {
@@ -296,17 +345,39 @@ export default function GalleryPage() {
     const storedResults = sessionStorage.getItem('search_results');
     const storedMatchCount = sessionStorage.getItem('match_count');
     
+    console.log('🔍 [GALLERY] Loading search results from session:', {
+        hasResults: !!storedResults,
+        matchCount: storedMatchCount,
+        resultsPreview: storedResults ? storedResults.substring(0, 200) : 'null'
+    });
+    
     if (storedResults) {
-      const results = JSON.parse(storedResults);
-      setPhotos(results);
-      if (storedMatchCount) {
-        setMatchCount(parseInt(storedMatchCount));
-      }
-      setLoading(false);
-    } else {
-      fetchAllPhotos();
+        try {
+            const results = JSON.parse(storedResults);
+            console.log('📸 [GALLERY] Parsed results count:', results?.length);
+            
+            if (results && Array.isArray(results) && results.length > 0) {
+                setPhotos(results);
+                if (storedMatchCount) {
+                    setMatchCount(parseInt(storedMatchCount));
+                }
+                setLoading(false);
+                return;
+            } else if (results && results.length === 0) {
+                console.log('📸 [GALLERY] Results array is empty');
+                setPhotos([]);
+                setMatchCount(0);
+                setLoading(false);
+                return;
+            }
+        } catch (e) {
+            console.error('Failed to parse search results', e);
+        }
     }
-  };
+    
+    console.warn('⚠️ [GALLERY] No valid search results found, loading all photos');
+    fetchAllPhotos();
+};
 
   const fetchAllPhotos = useCallback(async () => {
     try {
@@ -322,6 +393,7 @@ export default function GalleryPage() {
       }
       
       const data = await response.json();
+      console.log('📸 Fetched all photos count:', data?.length || 0);
       
       const photosWithUrls = (data || []).map((photo: any) => ({
         id: photo.id,
@@ -342,16 +414,36 @@ export default function GalleryPage() {
   }, [eventid, guestId, BACKEND_URL]);
 
   const handleSearchResults = (results: any) => {
-    const photosWithUrls = (results.photos || []).map((photo: any) => ({
-      id: photo.id,
-      url: getImageUrl(photo.url),
-      thumbnail_url: photo.thumbnail_url ? getImageUrl(photo.thumbnail_url) : undefined,
-      similarity_score: photo.similarity_score
+    console.log('🔍 [PORTAL] Search results received:', results);
+    console.log('🔍 [PORTAL] Photos array:', results.photos);
+    console.log('🔍 [PORTAL] Match count:', results.match_count);
+    
+    if (!results.photos || results.photos.length === 0) {
+        console.log('❌ [PORTAL] No photos in results');
+        setError('No matching photos found');
+        return;
+    }
+    
+    const photosWithUrls = results.photos.map((photo: any) => ({
+        id: photo.id,
+        url: getImageUrl(photo.url || photo.file_path || ''),
+        thumbnail_url: getImageUrl(photo.thumbnail_url || photo.url || ''),
+        similarity_score: photo.similarity_score
     }));
-    setPhotos(photosWithUrls);
-    setMatchCount(results.match_count);
-    setLoading(false);
-  };
+    
+    console.log('📸 [PORTAL] Processed photos count:', photosWithUrls.length);
+    
+    sessionStorage.removeItem('search_results');
+    sessionStorage.removeItem('match_count');
+    
+    sessionStorage.setItem('search_results', JSON.stringify(photosWithUrls));
+    sessionStorage.setItem('match_count', results.match_count?.toString() || photosWithUrls.length.toString());
+    
+    const saved = sessionStorage.getItem('search_results');
+    console.log('✅ [PORTAL] Saved to session. Length:', saved ? JSON.parse(saved).length : 0);
+    
+    router.push(`/portal/${eventid}/gallery?search=true`);
+};
 
   const handleDownloadAll = async () => {
     if (!guestId) return;
@@ -403,13 +495,14 @@ export default function GalleryPage() {
   const handleNewSearch = () => {
     sessionStorage.removeItem('search_results');
     sessionStorage.removeItem('match_count');
-    router.push(`/portal/event/${eventid}`);
+    router.push(`/portal/${eventid}`);
   };
 
   const handleClearFilter = () => {
     sessionStorage.removeItem('search_results');
     sessionStorage.removeItem('match_count');
     setMatchCount(null);
+    router.replace(`/portal/${eventid}/gallery`);
     fetchAllPhotos();
   };
 
@@ -458,7 +551,7 @@ export default function GalleryPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-black">
-      {/* Header with Find My Face Button */}
+      {/* Header with Find My Face Button and Subscribe Button */}
       <nav className="sticky top-0 z-40 bg-black/80 backdrop-blur-xl border-b border-zinc-800 px-4 md:px-6 py-4 flex items-center justify-between">
         <button 
           onClick={() => isSearchResult ? handleNewSearch() : router.back()} 
@@ -482,6 +575,26 @@ export default function GalleryPage() {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* ✅ SUBSCRIBE BUTTON */}
+          <button
+            onClick={handleSubscribe}
+            disabled={subscribing || isSubscribed}
+            className={`px-3 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 ${
+              isSubscribed 
+                ? 'bg-green-600/20 text-green-400 cursor-default' 
+                : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+            }`}
+          >
+            {subscribing ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : isSubscribed ? (
+              <BellRing size={14} />
+            ) : (
+              <Bell size={14} />
+            )}
+            {isSubscribed ? 'Subscribed' : 'Get Updates'}
+          </button>
+          
           {/* ✅ FIND MY FACE BUTTON */}
           <button
             onClick={() => setShowSelfieSearch(true)}

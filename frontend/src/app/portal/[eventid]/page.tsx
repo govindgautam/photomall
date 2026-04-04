@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Camera, Upload, Loader2, Sparkles, ArrowRight, AlertCircle, CheckCircle, X, Sliders, Mail } from 'lucide-react';
+import { Camera, Upload, Loader2, Sparkles, ArrowRight, AlertCircle, CheckCircle, X, Sliders, Mail, Bell, BellRing } from 'lucide-react';
 import { getImageUrl } from '@/lib/utils';
 import Webcam from 'react-webcam';
 
@@ -44,7 +44,7 @@ function SelfieSearchModal({
       });
 
       const data = await response.json();
-      console.log('Search response:', data);
+      console.log('🔍 Search API Response:', data);
 
       if (data.success && data.photos && data.photos.length > 0) {
         setSuccess(`✨ Found ${data.photos.length} matching photos!`);
@@ -223,6 +223,10 @@ export default function PortalPage() {
   const [eventInfo, setEventInfo] = useState<{ name: string; photoCount: number } | null>(null);
   const [showSelfieSearch, setShowSelfieSearch] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Subscribe State
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
@@ -236,6 +240,7 @@ export default function PortalPage() {
         }
         setGuestId(id);
         await fetchEventInfo();
+        await checkSubscriptionStatus();
       };
       initGuest();
     }
@@ -258,6 +263,45 @@ export default function PortalPage() {
       setEventInfo({ name: `Event ${eventid}`, photoCount: 0 });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Check if already subscribed
+  const checkSubscriptionStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/py/notifications/subscribers/${eventid}`);
+      const data = await res.json();
+      if (data.subscribers && data.subscribers.includes(email)) {
+        setIsSubscribed(true);
+      }
+    } catch (err) {
+      console.error('Check subscription error:', err);
+    }
+  };
+
+  // Subscribe to email notifications
+  const handleSubscribe = async () => {
+    setSubscribing(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/py/notifications/subscribe/${eventid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsSubscribed(true);
+        setSuccess('You will receive email notifications for this event!');
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(data.message || 'Failed to subscribe');
+        setTimeout(() => setError(null), 3000);
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setSubscribing(false);
     }
   };
 
@@ -288,42 +332,59 @@ export default function PortalPage() {
     }
   };
 
-  const verifyOTP = async () => {
+ const verifyOTP = async () => {
     if (!otp || otp.length !== 6) {
-      setError('Enter 6-digit OTP');
-      return;
+        setError('Enter 6-digit OTP');
+        return;
     }
     setVerifying(true);
+    setError(null);
+    
     try {
-      const res = await fetch(`${BACKEND_URL}/api/py/email/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp, event_id: parseInt(eventid as string) })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setVerified(true);
-        setShowOtpInput(false);
-        setSuccess('Access granted!');
-      } else {
-        setError('Invalid OTP');
-      }
+        const res = await fetch(`${BACKEND_URL}/api/py/email/verify-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, otp, event_id: parseInt(eventid as string) })
+        });
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            setVerified(true);
+            setShowOtpInput(false);
+            setSuccess('Access granted! Redirecting to gallery...');
+            
+            // ✅ FIX: Redirect to GALLERY page
+            setTimeout(() => {
+                router.push(`/portal/${eventid}/gallery`);
+            }, 1500);
+        } else {
+            setError('Invalid OTP');
+        }
     } catch {
-      setError('Network error');
+        setError('Network error');
     } finally {
-      setVerifying(false);
-      setTimeout(() => { setError(null); setSuccess(null); }, 3000);
+        setVerifying(false);
+        setTimeout(() => { setError(null); setSuccess(null); }, 3000);
     }
-  };
-
+};
   const handleSearchResults = (results: any) => {
+    console.log('🔍 Search results received:', results);
+    
     const photosWithUrls = (results.photos || []).map((photo: any) => ({
       ...photo,
       url: getImageUrl(photo.url),
       thumbnail_url: getImageUrl(photo.thumbnail_url || photo.url)
     }));
+    
+    console.log('📸 Photos with URLs:', photosWithUrls.length);
+    
     sessionStorage.setItem('search_results', JSON.stringify(photosWithUrls));
-    sessionStorage.setItem('match_count', results.match_count?.toString() || '0');
+    sessionStorage.setItem('match_count', results.match_count?.toString() || photosWithUrls.length.toString());
+    
+    // Verify save was successful
+    const saved = sessionStorage.getItem('search_results');
+    console.log('✅ Saved to session. Length:', saved ? JSON.parse(saved).length : 0);
+    
     router.push(`/portal/${eventid}/gallery?search=true`);
   };
 
@@ -385,20 +446,43 @@ export default function PortalPage() {
 
   return (
     <div className="min-h-screen bg-black">
-      {/* Header with Find My Face Button */}
+      {/* Header with Find My Face Button and Subscribe Button */}
       <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-xl border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-white">{eventInfo?.name || `Event ${eventid}`}</h1>
             <p className="text-xs text-zinc-500">{eventInfo?.photoCount || 0} photos • {email}</p>
           </div>
-          <button
-            onClick={() => setShowSelfieSearch(true)}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 text-white text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2"
-          >
-            <Camera size={16} />
-            Find My Face
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Subscribe Button */}
+            <button
+              onClick={handleSubscribe}
+              disabled={subscribing || isSubscribed}
+              className={`px-3 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 ${
+                isSubscribed 
+                  ? 'bg-green-600/20 text-green-400 cursor-default' 
+                  : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+              }`}
+            >
+              {subscribing ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : isSubscribed ? (
+                <BellRing size={14} />
+              ) : (
+                <Bell size={14} />
+              )}
+              {isSubscribed ? 'Subscribed' : 'Get Updates'}
+            </button>
+            
+            {/* Find My Face Button */}
+            <button
+              onClick={() => setShowSelfieSearch(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 text-white text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2"
+            >
+              <Camera size={16} />
+              Find My Face
+            </button>
+          </div>
         </div>
       </header>
 
@@ -432,12 +516,12 @@ export default function PortalPage() {
       </main>
 
       {success && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-4 py-3 rounded-xl shadow-xl">
+        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-4 py-3 rounded-xl shadow-xl z-50">
           {success}
         </div>
       )}
       {error && (
-        <div className="fixed bottom-6 right-6 bg-red-500 text-white px-4 py-3 rounded-xl shadow-xl">
+        <div className="fixed bottom-6 right-6 bg-red-500 text-white px-4 py-3 rounded-xl shadow-xl z-50">
           {error}
         </div>
       )}

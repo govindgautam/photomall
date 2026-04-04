@@ -22,6 +22,7 @@ import EventIdInput from '@/components/EventIdInput';
 export default function AdminDashboard() {
   const router = useRouter();
   const ingesterRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [photographerId, setPhotographerId] = useState(1);
 
@@ -146,20 +147,6 @@ export default function AdminDashboard() {
       const errorText = err.message || 'Network error. Please try again.';
       setQuickShareMessage({ type: 'error', text: errorText });
       setTimeout(() => setQuickShareMessage(null), 3000);
-    }
-  };
-
-  // --- Floating Share Function ---
-  const handleFloatingShare = () => {
-    console.log('Share button clicked!');
-    const eventIdInput = prompt('Enter Event ID to share:');
-    console.log('Event ID entered:', eventIdInput);
-    
-    if (eventIdInput && !isNaN(parseInt(eventIdInput))) {
-      console.log('Navigating to:', `/admin/share/${eventIdInput}`);
-      router.push(`/admin/share/${eventIdInput}`);
-    } else if (eventIdInput) {
-      alert('❌ Please enter a valid numeric Event ID');
     }
   };
   
@@ -387,15 +374,16 @@ export default function AdminDashboard() {
     ingesterRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
+  // ✅ WORKING UPLOAD HANDLER
   const handleUpload = async () => {
     if (!files || files.length === 0 || !eventId.trim()) {
-      setStatus('Select an Event ID and at least one photo before uploading.');
+      setStatus('❌ Select an Event ID and at least one photo before uploading.');
       return;
     }
 
     setLoading(true);
     setIngestionComplete(false);
-    setStatus('AI Engine: Initializing Stream... 🚀');
+    setStatus('📤 Uploading photos to server...');
     setTotalCount(files.length);
     setProcessedCount(0);
     setProgress(0);
@@ -403,13 +391,49 @@ export default function AdminDashboard() {
     setLiveLog([]);
 
     try {
-      await apiClient.uploadBulkPhotos(eventId, files);
-      setStatus(`AI Engine: Processing ${files.length} photos... ⏳`);
-      setFiles(null);
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      const response = await fetch(`${BACKEND_URL}/api/py/events/${eventId}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      console.log('Upload response:', data);
+
+      if (response.ok && data.success) {
+        setStatus(`✅ ${data.uploaded_count} photos uploaded successfully!`);
+        setIngestionComplete(true);
+        setProgress(100);
+        setIndexingProgress(100);
+        
+        setFiles(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        
+        await refreshData(true);
+        
+        setQuickShareMessage({
+          type: 'success',
+          text: `✅ ${data.uploaded_count} photos uploaded! AI is processing them.`
+        });
+        setTimeout(() => setQuickShareMessage(null), 5000);
+      } else {
+        throw new Error(data.detail || data.message || 'Upload failed');
+      }
     } catch (err: any) {
-      setStatus(`❌ Error: ${err.message || "Upload failed"}`);
+      console.error('Upload error:', err);
+      setStatus(`❌ Upload failed: ${err.message}`);
+      setQuickShareMessage({
+        type: 'error',
+        text: `❌ Upload failed: ${err.message}`
+      });
+      setTimeout(() => setQuickShareMessage(null), 5000);
       setLoading(false);
-      closeWs();
     }
   };
 
@@ -497,7 +521,6 @@ export default function AdminDashboard() {
                     count={photoCount}
                     onUploadClick={() => prepareUpload(event.id.toString())}
                     onOpenGallery={(eid) => router.push(`/admin/gallery/${eid}`)}
-                    
                   />
                 );
               })
@@ -559,12 +582,17 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className={`border-2 border-dashed rounded-[2.5rem] p-16 text-center cursor-pointer ${files ? 'border-blue-500 bg-blue-500/5' : 'border-slate-800 hover:border-slate-700'}`}>
+          {/* ✅ FIXED DROP ZONE WITH ONCLICK */}
+          <div 
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-[2.5rem] p-16 text-center cursor-pointer transition-all ${files ? 'border-blue-500 bg-blue-500/5' : 'border-slate-800 hover:border-slate-700'}`}
+          >
             <input 
+              ref={fileInputRef}
               type="file" 
               multiple 
               accept="image/*" 
-              className="absolute inset-0 opacity-0 cursor-pointer" 
+              className="hidden" 
               onChange={(e) => setFiles(Array.from(e.target.files || []))} 
               disabled={loading} 
             />
@@ -598,9 +626,6 @@ export default function AdminDashboard() {
           onClose={() => setIsModalOpen(false)} 
           onSuccess={() => refreshData(true)} 
         />
-
-        {/* Floating Share Button */}
-        {/* Floating Share Button - Direct Navigation */}
        
       </div>
     </div>
