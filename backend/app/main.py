@@ -34,6 +34,7 @@ from app.routes.download_routes import router as download_router
 from app.routes.admin_routes import router as admin_router
 from app.routes.user_routes import router as user_router
 from app.routes.email_routes import router as email_router
+from app.routes import notification_routes
 from app.utils.websocket_manager import manager, startup_websocket_manager, shutdown_websocket_manager
 from app.utils.auth_utils import get_current_user_optional, get_current_user
 
@@ -334,6 +335,7 @@ app.include_router(download_router, prefix="/api/py/download", tags=["Download"]
 app.include_router(portal_router, prefix="/api/py/portal", tags=["Portal"])
 app.include_router(email_router, prefix="/api/py/email", tags=["Email Access"])
 app.include_router(user_router, prefix="/api/py/user", tags=["User Settings"])
+app.include_router(notification_routes.router, prefix="/api/py/notifications", tags=["Notifications"])
 
 # --- WebSocket ---
 @app.websocket("/api/py/ws/ingestion/{event_id}")

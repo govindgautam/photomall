@@ -3,20 +3,20 @@ import logging
 import asyncio
 import time
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text 
 from sqlalchemy import distinct, func, or_, and_, case, desc
-# In lines ko file ke top par imports ke sath add karein
 from app.schemas.event import EventDetailResponse
 from datetime import datetime
 
 from pydantic import BaseModel
 import json
 from functools import lru_cache
-# --- Existing Imports ke niche ye add karein ---
 from app.utils.auth_utils import get_current_user_optional
+import shutil
+import httpx
 
 # --- Local Imports ---
 from database.db import SessionLocal
@@ -28,6 +28,8 @@ from app.schemas.event import EventCreate
 from app.utils.qr_generator import generate_event_qr
 from ai_service.face_service import extract_faces, generate_face_embedding_from_face
 from app.utils.websocket_manager import manager
+from ai_service.tagging_complete_trigger import on_tagging_progress
+from app.services.email_notification import email_notification_service
 
 # --- Global Architect Config ---
 logging.basicConfig(level=logging.INFO)
@@ -36,11 +38,11 @@ logger = logging.getLogger("EventArchitect")
 router = APIRouter(tags=["Events Management"])
 
 # --- Performance Configuration ---
-DASHBOARD_CACHE_TTL = 300  # 5 minutes cache for dashboard stats
-STATS_CACHE_TTL = 60     # 1 minute cache for admin stats
+DASHBOARD_CACHE_TTL = 300
+STATS_CACHE_TTL = 60
 MAX_EVENTS_PER_PAGE = 50
 
-# --- In-memory cache for dashboard performance ---
+# --- In-memory cache ---
 _dashboard_cache: Dict[str, Dict] = {}
 _stats_cache: Dict[str, Any] = {}
 
@@ -48,19 +50,6 @@ _stats_cache: Dict[str, Any] = {}
 class EventUpdate(BaseModel):
     name: str | None = None
     location: str | None = None
-
-class EventDetailResponse(BaseModel):
-    id: int
-    name: str
-    location: str
-    date: Optional[str] = None
-    photo_count: int
-    total_size: str
-    status: str
-    qr_code_path: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 class DashboardStats(BaseModel):
     total_events: int
@@ -72,6 +61,27 @@ class DashboardStats(BaseModel):
     completed_events: int
     average_photos_per_event: float
 
+# --- Helper function to get subscribers ---
+async def get_event_subscribers(event_id: int) -> List[str]:
+    """Get all subscribed guests for an event"""
+    try:
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/event_subscribers?event_id=eq.{event_id}&is_active=eq.true&select=guest_email",
+                headers={
+                    "apikey": SUPABASE_ANON_KEY,
+                    "Authorization": f"Bearer {SUPABASE_ANON_KEY}"
+                }
+            )
+            subscribers = response.json()
+            return [s.get("guest_email") for s in subscribers]
+    except Exception as e:
+        print(f"Error getting subscribers: {e}")
+        return []
+
 # --- Database Session Factory ---
 def get_db():
     db = SessionLocal()
@@ -82,37 +92,24 @@ def get_db():
 
 # --- Cache Management Functions ---
 def _get_cache_key(prefix: str, **kwargs) -> str:
-    """Generate cache key with parameters"""
     key_parts = [prefix]
     for k, v in sorted(kwargs.items()):
         key_parts.append(f"{k}={v}")
     return "|".join(key_parts)
 
 def _is_cache_valid(cache_entry: Dict, ttl: int) -> bool:
-    """Check if cache entry is still valid"""
     return time.time() - cache_entry.get('timestamp', 0) < ttl
 
 def _set_cache(cache_dict: Dict, key: str, data: Any):
-    """Set cache entry with timestamp"""
-    cache_dict[key] = {
-        'data': data,
-        'timestamp': time.time()
-    }
+    cache_dict[key] = {'data': data, 'timestamp': time.time()}
 
 def _get_cache(cache_dict: Dict, key: str, ttl: int) -> Optional[Any]:
-    """Get cache entry if valid"""
     entry = cache_dict.get(key)
     if entry and _is_cache_valid(entry, ttl):
         return entry['data']
     return None
 
-import os
-
 def _calculate_storage_usage() -> float:
-    """
-    Helper function to calculate total storage used by originals and previews.
-    Returns size in MB.
-    """
     total_size = 0
     paths = ["uploads/originals", "uploads/previews"]
     for path in paths:
@@ -121,50 +118,142 @@ def _calculate_storage_usage() -> float:
                 for f in filenames:
                     fp = os.path.join(dirpath, f)
                     total_size += os.path.getsize(fp)
-    return round(total_size / (1024 * 1024), 2)  # Convert to MB
+    return round(total_size / (1024 * 1024), 2)
 
-# --- High-Performance Statistics Functions ---
-def _get_precomputed_stats(db: Session) -> Dict[str, Any]:
+# ==================== UPLOAD ENDPOINT WITH EMAIL TRIGGER ====================
+
+@router.post("/{event_id}/upload")
+async def upload_photos(
+    event_id: int,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
     """
-    Senior Architect: 100% Safe Stats Query.
-    Ensures brackets are perfect for SQLAlchemy and handles empty DB.
+    Upload multiple photos to an event
     """
     try:
-        # 1. Core stats (Brackets fixed: count ke andar distinct)
-        core_stats = db.query(
-            func.count(distinct(Event.id)).label('total_events'),
-            func.count(distinct(Photo.id)).label('total_photos'),
-            func.count(distinct(FaceEmbedding.id)).label('total_faces')
-        ).first()
+        # Check if event exists
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
         
-        # 2. Extract values safely
-        t_ev = int(core_stats.total_events or 0)
-        t_ph = int(core_stats.total_photos or 0)
-        t_fc = int(core_stats.total_faces or 0)
+        # Create upload directory
+        upload_dir = f"uploads/events/{event_id}"
+        os.makedirs(upload_dir, exist_ok=True)
         
-        # 3. Optimized Processing Stats (Instant Index Scan)
-        # Any event with at least one unprocessed photo is 'processing'
-        p_events = db.query(Event.id).join(Photo).filter(Photo.is_processed == False).distinct().count()
-        # Events without unprocessed photos are 'completed'
-        c_events = t_ev - p_events
+        uploaded_count = 0
+        uploaded_files = []
+        
+        for file in files:
+            # Validate file type
+            if not file.content_type.startswith('image/'):
+                continue
+            
+            # Generate unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{timestamp}_{file.filename}"
+            file_path = os.path.join(upload_dir, filename)
+            
+            # Save file
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            # Create photo record in database
+            photo = Photo(
+                event_id=event_id,
+                file_path=file_path,
+                original_size=os.path.getsize(file_path),
+                is_processed=False
+            )
+            db.add(photo)
+            
+            uploaded_count += 1
+            uploaded_files.append(filename)
+            
+            # Close file
+            await file.close()
+        
+        # Commit all photos to database
+        db.commit()
+        
+        # ✅ SEND EMAIL IMMEDIATELY AFTER UPLOAD
+        try:
+            from app.services.email_notification import email_notification_service
+            
+            # Send to admin
+            await email_notification_service.notify_admin(
+                admin_email="govindgautam9079077974@gmail.com",
+                event_name=event.name,
+                event_id=event_id,
+                photo_count=uploaded_count,
+                face_count=0
+            )
+            print(f"✅ Admin email sent for event {event_id}")
+            
+            # Send to subscribed guests
+            subscribers = await get_event_subscribers(event_id)
+            if subscribers:
+                await email_notification_service.notify_multiple_guests(
+                    guest_emails=subscribers,
+                    event_name=event.name,
+                    event_id=event_id
+                )
+                print(f"✅ Guest emails sent to {len(subscribers)} subscribers")
+            
+        except Exception as e:
+            print(f"❌ Email error: {e}")
         
         return {
-            'total_events': t_ev,
-            'total_photos': t_ph,
-            'total_faces': t_fc,
-            'average_photos_per_event': round(float(t_ph / t_ev), 2) if t_ev > 0 else 0.0,
-            'processing_events': p_events,
-            'completed_events': c_events
+            "success": True,
+            "uploaded_count": uploaded_count,
+            "files": uploaded_files,
+            "message": f"Successfully uploaded {uploaded_count} photos"
         }
+        
     except Exception as e:
-        import logging
-        logging.error(f"❌ STATS CRASH FIXED: {e}")
-        # Return default values instead of 500 Error
-        return {
-            'total_events': 0, 'total_photos': 0, 'total_faces': 0,
-            'average_photos_per_event': 0.0, 'processing_events': 0, 'completed_events': 0
-        }
-# --- 2. ULTRA-FAST DASHBOARD LISTING (Zero-Latency with Caching) ---
+        logger.error(f"Upload error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== BACKGROUND PROCESSING ====================
+
+async def process_photos_background(event_id: int, files: List[str], upload_dir: str):
+    """
+    Background task to process uploaded photos for face detection
+    """
+    db = SessionLocal()
+    try:
+        processed = 0
+        total = len(files)
+        
+        for filename in files:
+            file_path = os.path.join(upload_dir, filename)
+            
+            # Update photo record
+            photo = db.query(Photo).filter(Photo.file_path == file_path).first()
+            if photo:
+                photo.is_processed = True
+                db.commit()
+            
+            processed += 1
+            await manager.update_progress(str(event_id), processed, total)
+            
+            # Extract faces if needed (optional)
+            try:
+                faces = extract_faces(file_path)
+                # Here you can add face embedding generation logic
+            except Exception as face_err:
+                logger.error(f"Face extraction error for {filename}: {face_err}")
+        
+        logger.info(f"✅ Event {event_id}: {processed} photos processed successfully")
+        
+    except Exception as e:
+        logger.error(f"Background processing error: {e}")
+    finally:
+        db.close()
+
+# ==================== EXISTING ENDPOINTS ====================
+
 @router.get("/list/{photographer_id}", response_model=List[EventDetailResponse])
 def list_photographer_events(
     photographer_id: int, 
@@ -172,15 +261,9 @@ def list_photographer_events(
     page: int = Query(1, ge=1),
     limit: int = Query(MAX_EVENTS_PER_PAGE, ge=1, le=100)
 ):
-    """
-    Senior Architect: Ultra-Stable Dashboard Logic.
-    Fixes: 500 Server Errors, Storage Calculations, and Schema Mismatch.
-    """
     try:
         logger.info(f"🚀 Fetching Dashboard for Photographer ID: {photographer_id}")
         
-        # 1. Fetch Events (Optimized Query)
-        # Hum direct models use kar rahe hain taaki SQLAlchemy relationships kaam karein
         events = (
             db.query(Event)
             .filter(Event.photographer_id == photographer_id)
@@ -198,23 +281,19 @@ def list_photographer_events(
         
         for event in events:
             try:
-                # 2. Count Photos & Processed status
                 p_count = db.query(func.count(Photo.id)).filter(Photo.event_id == event.id).scalar() or 0
                 processed_count = db.query(func.count(Photo.id)).filter(
                     Photo.event_id == event.id, 
                     Photo.is_processed == True
                 ).scalar() or 0
                 
-                # 3. Storage Calculation (Essential for Dashboard UI)
                 total_bytes = db.query(func.sum(Photo.original_size)).filter(Photo.event_id == event.id).scalar() or 0
                 size_mb = f"{(total_bytes / (1024 * 1024)):.2f} MB"
                 
-                # 4. Status Logic
                 status_label = "Pending"
                 if p_count > 0:
                     status_label = "Processing" if processed_count < p_count else "Completed"
 
-                # 5. Schema Mapping (Matching EventDetailResponse)
                 event_data = {
                     "id": event.id,
                     "name": event.name or "Untitled Event",
@@ -237,113 +316,30 @@ def list_photographer_events(
 
     except Exception as e:
         logger.error(f"❌ Critical Dashboard Error: {str(e)}", exc_info=True)
-        # Fallback: empty list avoids 500 error in Frontend
         return []
 
-# --- 3. ENHANCED EVENT INGESTION ---
-# --- Sabse pehle imports check karein (File ke top par) ---
- # Ye hona chahiye
 
-# --- Ye helper function route ke upar ya niche add karein ---
-async def start_neural_processing(event_id: int, files: list, event_path: str):
-    """
-    Neural Engine: Background worker for fast face indexing.
-    """
-    
-    
-    # DB session factory se naya session lein
-    db = SessionLocal()
-    try:
-        processed = 0
-        for filename in files:
-            img_path = os.path.join(event_path, filename)
-            
-            # 1. Faster Detection (opencv use hoga speed ke liye)
-            # face_service.py mein DETECTOR_BACKEND check karein
-            faces = extract_faces(img_path) 
-            
-            # 2. Add to Database & Sync FAISS
-            # Yahan aapka photo save logic aayega
-            
-            processed += 1
-            # WebSocket par update bhejein
-            await manager.update_progress(str(event_id), processed, len(files))
-            
-        logger.info(f"✅ Event {event_id}: {processed} photos indexed successfully.")
-    except Exception as e:
-        logger.error(f"❌ Background Processing Error: {e}")
-    finally:
-        db.close()
-
-# --- Ab aapka updated trigger_bulk_ingestion route ---
-@router.post("/{event_id}/ingest")
-async def trigger_bulk_ingestion(
-    event_id: int, 
-    background_tasks: BackgroundTasks, # <-- BackgroundTasks add kiya
-    db: Session = Depends(get_db),
-    force_rescan: bool = Query(False)
-):
-    try:
-        event = db.query(Event).filter(Event.id == event_id).first()
-        if not event:
-            raise HTTPException(status_code=404, detail="Event tracking ID not found")
-        
-        event_path = f"uploads/events/{event_id}"
-        os.makedirs(event_path, exist_ok=True)
-        
-        valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
-        all_files = os.listdir(event_path)
-        files = [f for f in all_files if f.lower().endswith(valid_extensions)]
-        
-        if not files:
-            return {"status": "empty", "message": "No images found", "count": 0}
-
-        # Progress tracking init
-        from app.utils.websocket_manager import manager
-        manager.init_batch(str(event_id), len(files))
-        
-        # 🔥 CRITICAL FIX: Background mein kaam start karein
-        background_tasks.add_task(start_neural_processing, event_id, files, event_path)
-        
-        return {
-            "status": "processing",
-            "message": f"Neural engine processing {len(files)} photos in background...",
-            "total_photos": len(files),
-            "event_id": event_id,
-            "websocket_endpoint": f"/ws/ingestion/{event_id}"
-        }
-        
-    except Exception as e:
-        logger.error(f"🔥 Ingester Failure: {str(e)}")
-        raise HTTPException(status_code=500, detail="Neural ingestion failed")
-
-# --- 3. EVENT INITIALIZATION ---
 @router.post("/create", status_code=status.HTTP_201_CREATED)
 def create_event(event: EventCreate, db: Session = Depends(get_db)):
     try:
-        # 1. Clean data
         loc = event.location.strip() if event.location else "Jaipur, Rajasthan"
         name = event.name.strip() if event.name else "Untitled Event"
         
         logger.info(f"Attempting to create event: {name} for photographer: {event.photographer_id}")
 
-        # 2. Create Object (Minimal fields to avoid column mismatch)
         new_event = Event(
             name=name,
             location=loc,
             photographer_id=event.photographer_id
-            # 'count' ko hata diya hai agar model mein mismatch ho
         )
         
         db.add(new_event)
         db.commit()
         db.refresh(new_event)
 
-        # 3. Create Storage Folder
         event_path = f"uploads/events/{new_event.id}"
         os.makedirs(event_path, exist_ok=True)
 
-        # 4. QR Code (Try-Except block taaki main process na ruke)
         try:
             generate_event_qr(new_event.id)
         except Exception as qr_err:
@@ -357,37 +353,12 @@ def create_event(event: EventCreate, db: Session = Depends(get_db)):
 
     except Exception as e:
         db.rollback()
-        # 🔥 YE LINE TERMINAL MEIN DEKHO ASLI ERROR PATA CHALEGA
         logger.error(f"CRITICAL DB ERROR: {str(e)}") 
         raise HTTPException(
             status_code=500, 
             detail=f"Database Insertion Failed: {str(e)}"
         )
-# --- 4. ASSET SERVING & METADATA ---
-@router.get("/{event_id}/qr-code")
-def get_event_qr_image(event_id: int):
-    qr_path = f"static/qrcodes/event_{event_id}_qr.png"
-    if os.path.exists(qr_path):
-        return FileResponse(qr_path, media_type="image/png")
-    raise HTTPException(status_code=404, detail="QR Resource Not Found")
 
-@router.get("/{event_id}/details")
-def get_event_details(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    
-    return {
-        "id": event.id,
-        "name": event.name,
-        "location": event.location,
-        "photographer_id": event.photographer_id,
-        "count": getattr(event, 'count', 0),
-        "date": event.date.isoformat() if event.date else None
-    }
-
-# --- 6. ENHANCED ADMIN STATS ENDPOINT ---
-# Replace the existing get_enhanced_admin_stats function with this:
 
 @router.get("/admin/stats", response_model=DashboardStats)
 def get_enhanced_admin_stats(
@@ -395,11 +366,7 @@ def get_enhanced_admin_stats(
     use_cache: bool = Query(True),
     _current_user: str = Depends(get_current_user_optional)
 ):
-    """
-    Senior Architect: Robust admin dashboard with NULL safety and formatting fix.
-    """
     try:
-        # 1. Cache Check
         cache_key = "admin_dashboard_stats"
         if use_cache: 
             cached_result = _get_cache(_stats_cache, cache_key, STATS_CACHE_TTL)
@@ -409,17 +376,14 @@ def get_enhanced_admin_stats(
         logger.info("🚀 Computing FRESH admin dashboard stats")
         start_time = time.time()
         
-        # 2. Get Statistics with NULL Handling
         total_events = db.query(func.count(Event.id)).scalar() or 0
         total_photos = db.query(func.count(Photo.id)).scalar() or 0
         total_faces = db.query(func.count(FaceEmbedding.id)).scalar() or 0
         
-        # 3. Storage Calculation (Safe from NULL)
         total_bytes = db.query(func.sum(Photo.original_size)).scalar() or 0
         storage_mb = total_bytes / (1024 * 1024)
         formatted_storage = f"{storage_mb:.2f} MB"
         
-        # 4. Recent Events Query - FIXED: Added total_size and status
         recent_events_raw = (
             db.query(
                 Event.id,
@@ -429,7 +393,7 @@ def get_enhanced_admin_stats(
                 Event.created_at,
                 Event.photographer_id,
                 func.count(Photo.id).label('photo_count'),
-                func.sum(Photo.original_size).label('total_size')  # ✅ ADDED
+                func.sum(Photo.original_size).label('total_size')
             )
             .outerjoin(Photo, Event.id == Photo.event_id)
             .group_by(Event.id)
@@ -443,16 +407,13 @@ def get_enhanced_admin_stats(
             raw_date = event_row.date or event_row.created_at
             iso_date = raw_date.isoformat() if raw_date and hasattr(raw_date, 'isoformat') else None
             
-            # Calculate status based on photos
             photo_count = int(event_row.photo_count or 0)
             total_bytes_event = int(event_row.total_size or 0)
             total_size_mb = f"{(total_bytes_event / (1024 * 1024)):.2f} MB" if total_bytes_event > 0 else "0.00 MB"
             
-            # Determine status
             if photo_count == 0:
                 status = "pending"
             else:
-                # Check if any unprocessed photos
                 unprocessed = db.query(Photo).filter(
                     Photo.event_id == event_row.id,
                     Photo.is_processed == False
@@ -465,17 +426,15 @@ def get_enhanced_admin_stats(
                 "location": event_row.location or "Standard Site",
                 "date": iso_date,
                 "photo_count": photo_count,
-                "total_size": total_size_mb,  # ✅ ADDED - required field
-                "status": status,  # ✅ ADDED - required field
-                "qr_code_path": None  # Optional field
+                "total_size": total_size_mb,
+                "status": status,
+                "qr_code_path": None
             })
         
-        # 5. Calculate processing vs completed events
         processing_events = 0
         completed_events = 0
         
         for event in recent_events_raw:
-            # Check if event has unprocessed photos
             unprocessed = db.query(Photo).filter(
                 Photo.event_id == event.id,
                 Photo.is_processed == False
@@ -485,7 +444,6 @@ def get_enhanced_admin_stats(
             elif event.photo_count > 0:
                 completed_events += 1
         
-        # 6. Build Final Object
         avg_photos = (total_photos / total_events) if total_events > 0 else 0.0
 
         dashboard_stats = {
@@ -499,7 +457,6 @@ def get_enhanced_admin_stats(
             "average_photos_per_event": round(float(avg_photos), 2)
         }
         
-        # Cache & Return
         if use_cache:
             _set_cache(_stats_cache, cache_key, dashboard_stats)
         
@@ -507,77 +464,25 @@ def get_enhanced_admin_stats(
         
     except Exception as e:
         logger.error(f"❌ Admin stats failed: {str(e)}", exc_info=True)
-        # Minimal Fallback object with correct schema
         return DashboardStats(
             total_events=0, 
             total_photos=0, 
             total_faces=0,
             storage_used="0.00 MB", 
-            recent_events=[],  # Empty list is fine
+            recent_events=[],
             processing_events=0, 
             completed_events=0, 
             average_photos_per_event=0.0
         )
 
-# --- 7. CACHE MANAGEMENT ENDPOINT ---
-@router.post("/admin/cache/clear")
-def clear_dashboard_cache(
-    cache_type: str = Query("all", regex="^(all|dashboard|stats)$"),
-    _current_user: str = Depends(get_current_user_optional)
-):
-    """
-    Senior Architect: Manual cache management for debugging.
-    """
-    global _dashboard_cache, _stats_cache
-    
-    cleared_caches = []
-    
-    if cache_type in ["all", "dashboard"]:
-        _dashboard_cache.clear()
-        cleared_caches.append("dashboard")
-        
-    if cache_type in ["all", "stats"]:
-        _stats_cache.clear()
-        cleared_caches.append("stats")
-    
-    logger.info(f"🧹 Cleared caches: {', '.join(cleared_caches)}")
-    
-    return {
-        "success": True,
-        "cleared_caches": cleared_caches,
-        "message": f"Cache cleared for: {', '.join(cleared_caches)}"
-    }
 
-# --- 8. HEALTH CHECK ENDPOINT ---
-@router.get("/health")
-def events_health_check():
-    """
-    Senior Architect: Health check for events subsystem.
-    """
-    return {
-        "status": "healthy",
-        "subsystem": "events_management",
-        "cache_status": {
-            "dashboard_entries": len(_dashboard_cache),
-            "stats_entries": len(_stats_cache)
-        },
-        "performance": {
-            "dashboard_cache_ttl": DASHBOARD_CACHE_TTL,
-            "stats_cache_ttl": STATS_CACHE_TTL,
-            "max_events_per_page": MAX_EVENTS_PER_PAGE
-        }
-    }
 @router.delete("/{event_id}")
 def delete_event(event_id: int, db: Session = Depends(get_db)):
-    """
-    Architect Note: Performing a synchronized cleanup of all downstream dependencies.
-    """
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Target not found")
 
     try:
-        # Cleanup Child Assets (Face Embeddings -> Photos)
         photo_ids = [pid for (pid,) in db.query(Photo.id).filter(Photo.event_id == event_id).all()]
         if photo_ids:
             db.query(FaceEmbedding).filter(FaceEmbedding.photo_id.in_(photo_ids)).delete(synchronize_session=False)

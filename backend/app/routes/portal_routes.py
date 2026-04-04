@@ -140,7 +140,7 @@ def validate_phone(phone: str) -> bool:
 @router.get("/{event_id}/photos", response_model=List[PortalPhotoResponse])
 def get_portal_photos(
     event_id: int, 
-    identifier: str = Query(..., description="Guest identifier (phone/email/guest_id)"), 
+    identifier: Optional[str] = Query(None, description="Guest identifier (optional)"), 
     db: Session = Depends(get_db)
 ):
     """
