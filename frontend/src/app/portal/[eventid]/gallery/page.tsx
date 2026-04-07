@@ -232,7 +232,7 @@ export default function GalleryPage() {
   const [eventInfo, setEventInfo] = useState<{ name: string; photoCount: number } | null>(null);
   const [showSelfieSearch, setShowSelfieSearch] = useState(false);
   
-  // ✅ Subscribe State
+  // Subscribe State
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
 
@@ -290,7 +290,7 @@ export default function GalleryPage() {
     verifyAccess();
   }, [eventid, accessCode, router, BACKEND_URL]);
 
-  // ✅ Check subscription status
+  // Check subscription status
   const checkSubscriptionStatus = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/py/notifications/subscribers/${eventid}`);
@@ -303,7 +303,7 @@ export default function GalleryPage() {
     }
   };
 
-  // ✅ Subscribe handler
+  // Subscribe handler
   const handleSubscribe = async () => {
     if (!guestIdentifier) {
       alert('Please login first');
@@ -341,43 +341,40 @@ export default function GalleryPage() {
     }
   };
 
+  // ✅ FIXED: Better search results loading
   const loadSearchResults = () => {
     const storedResults = sessionStorage.getItem('search_results');
     const storedMatchCount = sessionStorage.getItem('match_count');
     
     console.log('🔍 [GALLERY] Loading search results from session:', {
-        hasResults: !!storedResults,
-        matchCount: storedMatchCount,
-        resultsPreview: storedResults ? storedResults.substring(0, 200) : 'null'
+      hasResults: !!storedResults,
+      matchCount: storedMatchCount
     });
     
     if (storedResults) {
-        try {
-            const results = JSON.parse(storedResults);
-            console.log('📸 [GALLERY] Parsed results count:', results?.length);
-            
-            if (results && Array.isArray(results) && results.length > 0) {
-                setPhotos(results);
-                if (storedMatchCount) {
-                    setMatchCount(parseInt(storedMatchCount));
-                }
-                setLoading(false);
-                return;
-            } else if (results && results.length === 0) {
-                console.log('📸 [GALLERY] Results array is empty');
-                setPhotos([]);
-                setMatchCount(0);
-                setLoading(false);
-                return;
-            }
-        } catch (e) {
-            console.error('Failed to parse search results', e);
+      try {
+        const results = JSON.parse(storedResults);
+        console.log('📸 [GALLERY] Parsed results count:', results?.length);
+        
+        if (results && Array.isArray(results) && results.length > 0) {
+          setPhotos(results);
+          if (storedMatchCount) {
+            setMatchCount(parseInt(storedMatchCount));
+          }
+          setLoading(false);
+          return;
         }
+      } catch (e) {
+        console.error('Failed to parse search results', e);
+      }
     }
     
+    // If no search results, clear and show all photos
     console.warn('⚠️ [GALLERY] No valid search results found, loading all photos');
+    sessionStorage.removeItem('search_results');
+    sessionStorage.removeItem('match_count');
     fetchAllPhotos();
-};
+  };
 
   const fetchAllPhotos = useCallback(async () => {
     try {
@@ -413,37 +410,42 @@ export default function GalleryPage() {
     }
   }, [eventid, guestId, BACKEND_URL]);
 
+  // ✅ FIXED: handleSearchResults with window.location
   const handleSearchResults = (results: any) => {
     console.log('🔍 [PORTAL] Search results received:', results);
     console.log('🔍 [PORTAL] Photos array:', results.photos);
     console.log('🔍 [PORTAL] Match count:', results.match_count);
     
     if (!results.photos || results.photos.length === 0) {
-        console.log('❌ [PORTAL] No photos in results');
-        setError('No matching photos found');
-        return;
+      console.log('❌ [PORTAL] No photos in results');
+      setError('No matching photos found');
+      return;
     }
     
     const photosWithUrls = results.photos.map((photo: any) => ({
-        id: photo.id,
-        url: getImageUrl(photo.url || photo.file_path || ''),
-        thumbnail_url: getImageUrl(photo.thumbnail_url || photo.url || ''),
-        similarity_score: photo.similarity_score
+      id: photo.id,
+      url: getImageUrl(photo.url || photo.file_path || ''),
+      thumbnail_url: getImageUrl(photo.thumbnail_url || photo.url || ''),
+      similarity_score: photo.similarity_score
     }));
     
     console.log('📸 [PORTAL] Processed photos count:', photosWithUrls.length);
     
+    // Clear old data
     sessionStorage.removeItem('search_results');
     sessionStorage.removeItem('match_count');
     
+    // Save new data
     sessionStorage.setItem('search_results', JSON.stringify(photosWithUrls));
     sessionStorage.setItem('match_count', results.match_count?.toString() || photosWithUrls.length.toString());
     
+    // Verify save
     const saved = sessionStorage.getItem('search_results');
     console.log('✅ [PORTAL] Saved to session. Length:', saved ? JSON.parse(saved).length : 0);
     
-    router.push(`/portal/${eventid}/gallery?search=true`);
-};
+    // ✅ Use window.location for guaranteed redirect
+    window.location.href = `/portal/${eventid}/gallery?search=true`;
+  };
 
   const handleDownloadAll = async () => {
     if (!guestId) return;
@@ -495,14 +497,13 @@ export default function GalleryPage() {
   const handleNewSearch = () => {
     sessionStorage.removeItem('search_results');
     sessionStorage.removeItem('match_count');
-    router.push(`/portal/${eventid}`);
+    window.location.href = `/portal/${eventid}`;
   };
 
   const handleClearFilter = () => {
     sessionStorage.removeItem('search_results');
     sessionStorage.removeItem('match_count');
     setMatchCount(null);
-    router.replace(`/portal/${eventid}/gallery`);
     fetchAllPhotos();
   };
 
@@ -575,7 +576,7 @@ export default function GalleryPage() {
         </div>
         
         <div className="flex items-center gap-2">
-          {/* ✅ SUBSCRIBE BUTTON */}
+          {/* Subscribe Button */}
           <button
             onClick={handleSubscribe}
             disabled={subscribing || isSubscribed}
@@ -595,7 +596,7 @@ export default function GalleryPage() {
             {isSubscribed ? 'Subscribed' : 'Get Updates'}
           </button>
           
-          {/* ✅ FIND MY FACE BUTTON */}
+          {/* Find My Face Button */}
           <button
             onClick={() => setShowSelfieSearch(true)}
             className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-medium hover:opacity-90 transition-all"

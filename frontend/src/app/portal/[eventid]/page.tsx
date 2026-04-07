@@ -230,21 +230,26 @@ export default function PortalPage() {
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
-  useEffect(() => {
+useEffect(() => {
     if (verified) {
-      const initGuest = async () => {
-        let id = sessionStorage.getItem('guest_id');
-        if (!id) {
-          id = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          sessionStorage.setItem('guest_id', id);
+        // ✅ Ensure guest_identifier is set
+        if (!sessionStorage.getItem('guest_identifier')) {
+            sessionStorage.setItem('guest_identifier', email);
         }
-        setGuestId(id);
-        await fetchEventInfo();
-        await checkSubscriptionStatus();
-      };
-      initGuest();
+        
+        const initGuest = async () => {
+            let id = sessionStorage.getItem('guest_id');
+            if (!id) {
+                id = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                sessionStorage.setItem('guest_id', id);
+            }
+            setGuestId(id);
+            await fetchEventInfo();
+            await checkSubscriptionStatus();
+        };
+        initGuest();
     }
-  }, [verified, eventid]);
+}, [verified, eventid, email]);  // ✅ email 
 
   const fetchEventInfo = async () => {
     setLoading(true);
@@ -332,60 +337,81 @@ export default function PortalPage() {
     }
   };
 
- const verifyOTP = async () => {
+  // ✅ FIXED verifyOTP function - Direct gallery redirect
+  const verifyOTP = async () => {
     if (!otp || otp.length !== 6) {
-        setError('Enter 6-digit OTP');
-        return;
+      setError('Enter 6-digit OTP');
+      return;
     }
     setVerifying(true);
     setError(null);
     
     try {
-        const res = await fetch(`${BACKEND_URL}/api/py/email/verify-otp`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, otp, event_id: parseInt(eventid as string) })
-        });
-        const data = await res.json();
+      const res = await fetch(`${BACKEND_URL}/api/py/email/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp, event_id: parseInt(eventid as string) })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        setVerified(true);
+        setShowOtpInput(false);
+        setSuccess('Access granted! Redirecting to gallery...');
         
-        if (res.ok && data.success) {
-            setVerified(true);
-            setShowOtpInput(false);
-            setSuccess('Access granted! Redirecting to gallery...');
-            
-            // ✅ FIX: Redirect to GALLERY page
-            setTimeout(() => {
-                router.push(`/portal/${eventid}/gallery`);
-            }, 1500);
-        } else {
-            setError('Invalid OTP');
-        }
-    } catch {
-        setError('Network error');
+        console.log('🔍 Redirecting to gallery for event:', eventid);
+        
+        // ✅ Use window.location for guaranteed redirect
+        setTimeout(() => {
+          window.location.href = `/portal/${eventid}/gallery`;
+        }, 1500);
+      } else {
+        setError('Invalid OTP');
+      }
+    } catch (err) {
+      console.error('OTP error:', err);
+      setError('Network error');
     } finally {
-        setVerifying(false);
-        setTimeout(() => { setError(null); setSuccess(null); }, 3000);
+      setVerifying(false);
+      setTimeout(() => { setError(null); setSuccess(null); }, 3000);
     }
-};
+  };
+
+  // ✅ FIXED handleSearchResults function
   const handleSearchResults = (results: any) => {
     console.log('🔍 Search results received:', results);
     
-    const photosWithUrls = (results.photos || []).map((photo: any) => ({
-      ...photo,
-      url: getImageUrl(photo.url),
-      thumbnail_url: getImageUrl(photo.thumbnail_url || photo.url)
+    // Check if results have photos
+    if (!results.photos || results.photos.length === 0) {
+      console.log('❌ No photos in results');
+      setError('No matching photos found');
+      return;
+    }
+    
+    // Convert photos to have proper URLs
+    const photosWithUrls = results.photos.map((photo: any) => ({
+      id: photo.id,
+      url: getImageUrl(photo.url || photo.file_path || ''),
+      thumbnail_url: getImageUrl(photo.thumbnail_url || photo.url || ''),
+      similarity_score: photo.similarity_score
     }));
     
     console.log('📸 Photos with URLs:', photosWithUrls.length);
     
+    // Clear old data
+    sessionStorage.removeItem('search_results');
+    sessionStorage.removeItem('match_count');
+    
+    // Save new data
     sessionStorage.setItem('search_results', JSON.stringify(photosWithUrls));
     sessionStorage.setItem('match_count', results.match_count?.toString() || photosWithUrls.length.toString());
     
-    // Verify save was successful
+    // Verify save
     const saved = sessionStorage.getItem('search_results');
     console.log('✅ Saved to session. Length:', saved ? JSON.parse(saved).length : 0);
     
-    router.push(`/portal/${eventid}/gallery?search=true`);
+    // ✅ Redirect to gallery with search=true
+    window.location.href = `/portal/${eventid}/gallery?search=true`;
   };
 
   if (!verified) {
