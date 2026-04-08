@@ -65,6 +65,10 @@ error_stats = {
     'startup_time': None
 }
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "ai-photomall-backend"}
+
 # --- Global Exception Middleware ---
 class GlobalExceptionMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
