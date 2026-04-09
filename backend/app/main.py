@@ -65,9 +65,15 @@ error_stats = {
     'startup_time': None
 }
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "service": "ai-photomall-backend"}
+app = FastAPI(
+    title="AI Event Photo Finder",
+    description="Enterprise-grade AI-driven photo recognition system",
+    version="1.6.0", 
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
 
 # --- Global Exception Middleware ---
 class GlobalExceptionMiddleware(BaseHTTPMiddleware):
@@ -288,14 +294,6 @@ async def lifespan(app: FastAPI):
         raise
 
 # --- FastAPI App Instance ---
-app = FastAPI(
-    title="AI Event Photo Finder",
-    description="Enterprise-grade AI-driven photo recognition system",
-    version="1.6.0", 
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
 
 # --- Middleware Registration (Order matters!) ---
 app.add_middleware(GlobalExceptionMiddleware)
