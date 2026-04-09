@@ -65,15 +65,26 @@ error_stats = {
     'startup_time': None
 }
 
+# imports...
+
+# --- Lifespan Function (PEHLE DEFINE KARO) ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup logic
+    yield
+    # shutdown logic
+
+# --- FastAPI App Instance (AB YE CHALEGA) ---
 app = FastAPI(
     title="AI Event Photo Finder",
-    description="Enterprise-grade AI-driven photo recognition system",
+    description="...",
     version="1.6.0", 
-    lifespan=lifespan,
+    lifespan=lifespan,  # ✅ Ab lifespan defined hai
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
+# --- Rest of the code ---
 
 # --- Global Exception Middleware ---
 class GlobalExceptionMiddleware(BaseHTTPMiddleware):
