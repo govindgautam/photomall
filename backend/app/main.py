@@ -62,7 +62,7 @@ error_stats = {
     'validation_errors': 0,
     'last_error': None,
     'errors_by_endpoint': {},
-    'startup_time': None
+    'startup_time': time.time()  
 }
 
 # imports...
