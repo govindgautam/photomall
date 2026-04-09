@@ -2,11 +2,7 @@ name: Build and Push Multi-Arch Docker Image
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'backend/**'
-      - 'backend/Dockerfile.production'
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -31,8 +27,8 @@ jobs:
       - name: Build and push Multi-Arch image
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
-          file: ./backend/Dockerfile.production
+          context: backend
+          file: backend/Dockerfile.production
           platforms: linux/amd64,linux/arm64
           push: true
           tags: govindgautam12/photomall-backend:latest
