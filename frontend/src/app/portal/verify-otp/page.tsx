@@ -1,10 +1,11 @@
-// frontend/src/app/portal/verify-otp/page.tsx
 "use client";
+import { Suspense } from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Key, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-export default function VerifyOTPPage() {
+// Separate component that uses useSearchParams
+function OTPContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get('email') || '';
@@ -179,5 +180,14 @@ export default function VerifyOTPPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Main page component with Suspense wrapper
+export default function VerifyOTPPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={32} /></div>}>
+      <OTPContent />
+    </Suspense>
   );
 }
