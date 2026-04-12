@@ -1,11 +1,13 @@
 /**
  * API Client Utility - PRODUCTION READY
- * Uses NEXT_PUBLIC_BACKEND_URL environment variable for API calls
+ * Uses Vercel rewrites for API calls (no mixed content errors)
  */
 
-// ✅ FIX: Use environment variable for backend URL
+// ✅ FIX: Use relative URL - Vercel rewrite will handle it
+const BASE_URL = "/api/py";
+
+// Direct backend URL only for image URLs (static assets)
 const DIRECT_BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
-const BASE_URL = `${DIRECT_BACKEND_URL}/api/py`;
 
 function normalizeApiUrl(url: string): string {
     // Guard against accidental double-prefixing
@@ -225,7 +227,8 @@ export const apiClient = {
         
         console.log(`[API] Searching faces in event ${eventId}`);
         
-        return robustRequest(`${DIRECT_BACKEND_URL}/api/py/portal/${eventId}/search-selfie`, {
+        // ✅ Use relative URL (Vercel rewrite will handle)
+        return robustRequest(`${BASE_URL}/portal/${eventId}/search-selfie`, {
             method: 'POST',
             body: formData,
         });
@@ -253,6 +256,7 @@ export const apiClient = {
         if (path.startsWith('http')) return path;
 
         const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+        // For images, use direct backend URL (static files)
         return `${DIRECT_BACKEND_URL}/${cleanPath}`;
     }
 };
