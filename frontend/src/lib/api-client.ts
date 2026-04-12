@@ -1,18 +1,14 @@
 /**
  * API Client Utility - PRODUCTION READY
- * This client is optimized to work with Next.js Rewrites via /api/py prefix.
- * It prevents Double Pathing (/api/api) and handles AI processing timeouts.
+ * Uses NEXT_PUBLIC_BACKEND_URL environment variable for API calls
  */
 
-// Senior Architect Fix: 
-// Hum BASE_URL ko sirf proxy prefix rakhenge. 
-// Next.js rewrite rule isse automatically "http://127.0.0.1:8000/api" par map kar dega.
-const BASE_URL = "/api/py";
-const DIRECT_BACKEND_URL =
-    (process.env.NEXT_PUBLIC_DIRECT_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+// ✅ FIX: Use environment variable for backend URL
+const DIRECT_BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+const BASE_URL = `${DIRECT_BACKEND_URL}/api/py`;
 
 function normalizeApiUrl(url: string): string {
-    // Guard against accidental double-prefixing like /api/py/api/search
+    // Guard against accidental double-prefixing
     return url.replace("/api/py/api/", "/api/py/");
 }
 
@@ -23,7 +19,7 @@ function normalizeApiUrl(url: string): string {
 async function robustRequest(url: string, options: RequestInit = {}, retries = 3): Promise<any> {
     const requestUrl = normalizeApiUrl(url);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s for Heavy AI Tasks
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
 
     try {
         const response = await fetch(requestUrl, {
@@ -44,7 +40,6 @@ async function robustRequest(url: string, options: RequestInit = {}, retries = 3
                 result = await response.text().catch(() => "");
             }
             
-            // If API returns partial match data even on error, recover it
             if (result && typeof result === 'object' && Array.isArray(result.matches)) {
                 return result;
             }
@@ -73,7 +68,7 @@ async function robustRequest(url: string, options: RequestInit = {}, retries = 3
             return robustRequest(url, options, retries - 1);
         }
 
-            console.error(`[API Critical Failure] ${requestUrl}:`, error.message);
+        console.error(`[API Critical Failure] ${requestUrl}:`, error.message);
         throw error;
     } finally {
         clearTimeout(timeoutId);
@@ -133,10 +128,6 @@ export const apiClient = {
         return result;
     },
 
-    /**
-     * 1. Get Admin Dashboard Stats
-     * Maps to: GET http://127.0.0.1:8000/api/admin/stats
-     */
     getDashboardStats: async () => {
         return robustRequest(`${BASE_URL}/admin/stats`, {
             method: 'GET',
@@ -144,10 +135,6 @@ export const apiClient = {
         });
     },
 
-    /**
-     * 2. Create New Event
-     * Maps to: POST http://127.0.0.1:8000/api/events/create
-     */
     createEvent: async (eventData: { name: string; location: string; photographer_id: number }) => {
         const result = await robustRequest(`${BASE_URL}/events/create`, {
             method: 'POST',
@@ -162,9 +149,6 @@ export const apiClient = {
         };
     },
 
-    /**
-     * 3. List Events for Photographer
-     */
     listEvents: async (photographerId: number) => {
         const result = await robustRequest(`${BASE_URL}/events/list/${photographerId}`, {
             method: 'GET',
@@ -196,9 +180,6 @@ export const apiClient = {
         });
     },
 
-    /**
-     * 4. Get All Photos for an Event
-     */
     getEventPhotos: async (eventId: string | number) => {
         if (!eventId || eventId === 'undefined') return [];
         return robustRequest(`${BASE_URL}/photos/event/${eventId}`, {
@@ -206,9 +187,6 @@ export const apiClient = {
         });
     },
 
-    /**
-     * Face cluster rows for an event
-     */
     getEventFaceClusters: async (eventId: string | number) => {
         if (!eventId || eventId === 'undefined') return [];
         const result = await robustRequest(`${BASE_URL}/photos/event/${eventId}/face-clusters`, {
@@ -217,9 +195,6 @@ export const apiClient = {
         return Array.isArray(result) ? result : [];
     },
 
-    /**
-     * Get specific event details
-     */
     getEventDetails: async (eventId: string | number) => {
         if (!eventId || eventId === 'undefined') return null;
         return robustRequest(`${BASE_URL}/events/${eventId}/details`, {
@@ -227,47 +202,35 @@ export const apiClient = {
         });
     },
 
-    /**
-     * 5. Guest face search (AI Vector Match)
-     * Maps to: POST http://127.0.0.1:8000/api/search
-     */
-    // ==================== PORTAL/SEARCH METHODS ====================
+    searchByFace: async (eventId: string | number, file: File, threshold?: number) => {
+        if (!eventId || eventId === 'undefined') throw new Error("Event ID is missing");
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('eventId', String(eventId));
+        
+        if (threshold) {
+            formData.append('threshold', threshold.toString());
+        }
+        
+        const guestId = typeof window !== 'undefined' ? sessionStorage.getItem('guest_id') : null;
+        if (guestId) {
+            formData.append('identifier', guestId);
+        }
+        
+        const guestEmail = typeof window !== 'undefined' ? sessionStorage.getItem('guest_email') : null;
+        if (guestEmail) {
+            formData.append('email', guestEmail);
+        }
+        
+        console.log(`[API] Searching faces in event ${eventId}`);
+        
+        return robustRequest(`${DIRECT_BACKEND_URL}/api/py/portal/${eventId}/search-selfie`, {
+            method: 'POST',
+            body: formData,
+        });
+    },
 
-searchByFace: async (eventId: string | number, file: File, threshold?: number) => {
-    if (!eventId || eventId === 'undefined') throw new Error("Event ID is missing");
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('eventId', String(eventId));
-    
-    // Add threshold for match sensitivity (0.7 = 70% match, 0.85 = 85% match)
-    if (threshold) {
-        formData.append('threshold', threshold.toString());
-    }
-    
-    // Add guest identifier for tracking
-    const guestId = typeof window !== 'undefined' ? sessionStorage.getItem('guest_id') : null;
-    if (guestId) {
-        formData.append('identifier', guestId);
-    }
-    
-    // Add email if available (from OTP verification)
-    const guestEmail = typeof window !== 'undefined' ? sessionStorage.getItem('guest_email') : null;
-    if (guestEmail) {
-        formData.append('email', guestEmail);
-    }
-    
-    console.log(`[API] Searching faces in event ${eventId} with threshold: ${threshold || 0.75}`);
-    
-    // Use portal search endpoint
-    return robustRequest(`${DIRECT_BACKEND_URL}/api/py/portal/${eventId}/search-selfie`, {
-        method: 'POST',
-        body: formData,
-    });
-},
-    /**
-     * 6. Admin Bulk Photo Upload
-     */
     uploadBulkPhotos: async (eventId: string | number, files: FileList | File[]) => {
         const formData = new FormData();
         formData.append('event_id', eventId.toString());
@@ -282,10 +245,6 @@ searchByFace: async (eventId: string | number, file: File, threshold?: number) =
         });
     },
 
-    /**
-     * 7. Image URL Resolution Helper
-     * Images bypass the proxy and hit the direct backend to avoid blob/buffer overhead.
-     */
     getImageUrl: (path: string) => {
         if (!path || path === 'undefined' || typeof path !== 'string') {
             return 'https://placehold.co/400x600/1e293b/475569?text=Invalid+Path';
@@ -294,9 +253,6 @@ searchByFace: async (eventId: string | number, file: File, threshold?: number) =
         if (path.startsWith('http')) return path;
 
         const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-        // Direct backend for static assets
-        const BACKEND_RAW = DIRECT_BACKEND_URL;
-        
-        return `${BACKEND_RAW}/${cleanPath}`;
+        return `${DIRECT_BACKEND_URL}/${cleanPath}`;
     }
 };
