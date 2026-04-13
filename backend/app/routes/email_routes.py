@@ -11,7 +11,7 @@ from app.models.event import Event
 from app.models.otp import OTP
 from app.models.photo import Photo  # ✅ Add this import
 from app.utils.email_service import email_service
-
+from app.services.email_notification import email_notification_service  # ✅ Ye file hai
 router = APIRouter(tags=["Email Access"])
 logger = logging.getLogger(__name__)
 
