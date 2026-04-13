@@ -6,56 +6,37 @@ import os
 load_dotenv()
 
 # ============================================================
-# DATABASE CONNECTION STRING (Supports both Local & Supabase)
+# DATABASE CONNECTION - NEON POSTGRESQL (Production)
 # ============================================================
 
-# Try to get DATABASE_URL from environment first
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+# Neon connection string
+DATABASE_URL = "postgresql://neondb_owner:npg_NChJsc2yM9Df@ep-frosty-lab-a15dl73a-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
 
-# If DATABASE_URL not set, try building from Supabase credentials
-if not DATABASE_URL:
-    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-    SUPABASE_PASSWORD = os.getenv("SUPABASE_DATABASE_PASSWORD", "")
-    
-    if SUPABASE_URL and SUPABASE_PASSWORD:
-        # Extract project ID from Supabase URL
-        project_id = SUPABASE_URL.replace("https://", "").replace(".supabase.co", "")
-        # Use connection pooler (port 6543) instead of direct (5432)
-        DATABASE_URL = f"postgresql://postgres:{SUPABASE_PASSWORD}@db.{project_id}.supabase.co:6543/postgres?sslmode=require"
-        print(f"✅ Using Supabase connection pooler for: {project_id}")
-    else:
-        # Fallback to local PostgreSQL (your original config)
-        DATABASE_URL = "postgresql://postgres:postgres123@localhost:5433/event_photo_db"
-        print("⚠️ Using local PostgreSQL database")
+# Override from environment if provided
+if os.getenv("DATABASE_URL"):
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
+print("✅ Using Neon PostgreSQL database")
 
 # ============================================================
-# CREATE ENGINE WITH OPTIMIZED SETTINGS FOR DEPLOYMENT
+# CREATE ENGINE WITH OPTIMIZED SETTINGS
 # ============================================================
 
-# Check if we're connecting to Supabase (cloud)
-is_supabase = "supabase.co" in DATABASE_URL or "pooler.supabase" in DATABASE_URL
-
-if is_supabase:
-    # Supabase specific engine settings
-    engine = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,           # Check connection before using
-        pool_size=5,                  # Limit connection pool size
-        max_overflow=10,              # Allow extra connections if needed
-        pool_recycle=3600,            # Recycle connections every hour
-        connect_args={
-            "connect_timeout": 10,    # 10 second timeout
-            "keepalives": 1,
-            "keepalives_idle": 30,
-            "keepalives_interval": 10,
-            "keepalives_count": 5
-        }
-    )
-    print("✅ Supabase engine created with optimized settings")
-else:
-    # Local PostgreSQL engine (your original config preserved)
-    engine = create_engine(DATABASE_URL)
-    print("✅ Local PostgreSQL engine created")
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=3600,
+    connect_args={
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5
+    }
+)
+print("✅ Neon engine created with optimized settings")
 
 # ============================================================
 # SESSION LOCAL
@@ -70,7 +51,7 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 # ============================================================
-# TEST CONNECTION (Preserved from your original code)
+# TEST CONNECTION
 # ============================================================
 
 try:
@@ -81,7 +62,7 @@ except Exception as e:
     print("❌ Database connection failed:", e)
 
 # ============================================================
-# GET DB SESSION (YOUR ORIGINAL FUNCTION - NO CHANGE)
+# GET DB SESSION
 # ============================================================
 
 def get_db():
