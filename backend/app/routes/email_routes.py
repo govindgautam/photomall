@@ -49,35 +49,43 @@ def send_otp(
     db: Session = Depends(get_db)
 ):
     """Send OTP to guest email for event access"""
-    # Check if event exists
-    event = db.query(Event).filter(Event.id == request.event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    
-    # Generate simple OTP
     import random
-    otp_code = f"{random.randint(100000, 999999)}"
+    import traceback
     
-    # Save OTP to database
-    expires_at = datetime.now() + timedelta(minutes=10)
-    
-    new_otp = OTP(
-        email=request.email,
-        event_id=request.event_id,
-        otp_code=otp_code,
-        expires_at=expires_at,
-        is_used=False
-    )
-    db.add(new_otp)
-    db.commit()
-    
-    # Return OTP (for testing without email)
-    return OTPResponse(
-        success=True,
-        message=f"✅ OTP: {otp_code} (Valid for 10 minutes)",
-        event_name=event.name,
-        event_id=event.id
-    )
+    try:
+        # Check if event exists
+        event = db.query(Event).filter(Event.id == request.event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        
+        # Generate OTP
+        otp_code = f"{random.randint(100000, 999999)}"
+        
+        # Save OTP to database
+        expires_at = datetime.now() + timedelta(minutes=10)
+        
+        new_otp = OTP(
+            email=request.email,
+            event_id=request.event_id,
+            otp_code=otp_code,
+            expires_at=expires_at,
+            is_used=False
+        )
+        db.add(new_otp)
+        db.commit()
+        
+        # Return OTP directly (skip email for now)
+        return OTPResponse(
+            success=True,
+            message=f"✅ OTP: {otp_code} (Valid for 10 minutes. Email sending disabled for testing)",
+            event_name=event.name,
+            event_id=event.id
+        )
+        
+    except Exception as e:
+        print(f"Error in send_otp: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/verify-otp", response_model=OTPResponse)
 def verify_otp(
