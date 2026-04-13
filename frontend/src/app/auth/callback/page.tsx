@@ -2,44 +2,19 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@clerk/nextjs';
 
 export default function AuthCallback() {
   const router = useRouter();
+  const { isSignedIn } = useAuth();
 
   useEffect(() => {
-    const handleCallback = async () => {
-      // Get the code from URL
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-      
-      console.log('Callback page loaded');
-      console.log('Code:', code);
-      
-      if (code) {
-        // Exchange code for session
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        
-        if (error) {
-          console.error('Exchange error:', error);
-          router.push('/?error=auth_failed');
-        } else {
-          router.push('/admin');
-        }
-      } else {
-        // Try to get existing session
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          router.push('/admin');
-        } else {
-          router.push('/?error=no_session');
-        }
-      }
-    };
-
-    handleCallback();
-  }, [router]);
+    if (isSignedIn) {
+      router.push('/admin');
+    } else {
+      router.push('/?error=auth_failed');
+    }
+  }, [isSignedIn, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">
