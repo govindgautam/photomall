@@ -63,25 +63,20 @@ class DashboardStats(BaseModel):
 
 # --- Helper function to get subscribers ---
 async def get_event_subscribers(event_id: int) -> List[str]:
-    """Get all subscribed guests for an event"""
+    """Get all subscribed guests for an event from Neon database"""
+    db = SessionLocal()
     try:
-        SUPABASE_URL = os.getenv("SUPABASE_URL")
-        SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/event_subscribers?event_id=eq.{event_id}&is_active=eq.true&select=guest_email",
-                headers={
-                    "apikey": SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_ANON_KEY}"
-                }
-            )
-            subscribers = response.json()
-            return [s.get("guest_email") for s in subscribers]
+        from app.models.event_subscriber import EventSubscriber
+        subscribers = db.query(EventSubscriber.guest_email).filter(
+            EventSubscriber.event_id == event_id,
+            EventSubscriber.is_active == True
+        ).all()
+        return [s[0] for s in subscribers]
     except Exception as e:
         print(f"Error getting subscribers: {e}")
         return []
-
+    finally:
+        db.close()
 # --- Database Session Factory ---
 def get_db():
     db = SessionLocal()
