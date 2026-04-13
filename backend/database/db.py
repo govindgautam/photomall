@@ -6,11 +6,10 @@ import os
 load_dotenv()
 
 # ============================================================
-# DATABASE CONNECTION - NEON POSTGRESQL (Production)
+# DATABASE CONNECTION - NEON POSTGRESQL
 # ============================================================
 
-# Neon connection string
-DATABASE_URL = "postgresql://neondb_owner:npg_NChJsc2yM9Df@ep-frosty-lab-a15dl73a-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+DATABASE_URL = "postgresql://neondb_owner:npg_NChJsc2yM9Df@ep-frosty-lab-a15dl73a-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 # Override from environment if provided
 if os.getenv("DATABASE_URL"):
@@ -19,7 +18,7 @@ if os.getenv("DATABASE_URL"):
 print("✅ Using Neon PostgreSQL database")
 
 # ============================================================
-# CREATE ENGINE WITH OPTIMIZED SETTINGS
+# CREATE ENGINE
 # ============================================================
 
 engine = create_engine(
@@ -36,34 +35,17 @@ engine = create_engine(
         "keepalives_count": 5
     }
 )
-print("✅ Neon engine created with optimized settings")
 
-# ============================================================
-# SESSION LOCAL
-# ============================================================
-
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
-
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ============================================================
-# TEST CONNECTION
-# ============================================================
-
+# Test connection
 try:
     connection = engine.connect()
     print("✅ Database connected successfully")
     connection.close()
 except Exception as e:
     print("❌ Database connection failed:", e)
-
-# ============================================================
-# GET DB SESSION
-# ============================================================
 
 def get_db():
     db = SessionLocal()
