@@ -54,8 +54,9 @@ def send_otp(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    # Generate OTP
-    otp_code = email_service.generate_otp()
+    # Generate simple OTP
+    import random
+    otp_code = f"{random.randint(100000, 999999)}"
     
     # Save OTP to database
     expires_at = datetime.now() + timedelta(minutes=10)
@@ -70,29 +71,13 @@ def send_otp(
     db.add(new_otp)
     db.commit()
     
-    # Send email
-    email_sent = email_service.send_otp_email(
-        to_email=request.email,
+    # Return OTP (for testing without email)
+    return OTPResponse(
+        success=True,
+        message=f"✅ OTP: {otp_code} (Valid for 10 minutes)",
         event_name=event.name,
-        otp=otp_code,
-        event_id=request.event_id
+        event_id=event.id
     )
-    
-    if email_sent:
-        return OTPResponse(
-            success=True,
-            message=f"OTP sent to {request.email}. Valid for 10 minutes.",
-            event_name=event.name,
-            event_id=event.id
-        )
-    else:
-        return OTPResponse(
-            success=True,
-            message=f"OTP: {otp_code} (Email not configured, use this for testing)",
-            event_name=event.name,
-            event_id=event.id
-        )
-
 
 @router.post("/verify-otp", response_model=OTPResponse)
 def verify_otp(
