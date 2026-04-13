@@ -2,6 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
+import random
 from typing import List
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +17,10 @@ class EmailNotificationService:
         self.sender_password = os.getenv("SENDER_PASSWORD")
         self.frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
         self.enabled = bool(self.sender_email and self.sender_password)
+
+    def generate_otp(self) -> str:
+        """Generate 6-digit OTP"""
+        return f"{random.randint(100000, 999999)}"
 
     def _send_email_sync(self, to_email: str, subject: str, body: str):
         if not self.enabled:
@@ -34,15 +39,32 @@ class EmailNotificationService:
                 server.login(self.sender_email, self.sender_password)
                 server.send_message(msg)
             
-            print(f"Email sent to {to_email}")
+            print(f"✅ Email sent to {to_email}")
             return True
         except Exception as e:
-            print(f"Failed to send email to {to_email}: {e}")
+            print(f"❌ Failed to send email to {to_email}: {e}")
             return False
 
     async def send_email(self, to_email: str, subject: str, body: str):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(executor, self._send_email_sync, to_email, subject, body)
+
+    async def send_otp_email(self, to_email: str, event_name: str, otp: str, event_id: int) -> bool:
+        """Send OTP email to guest"""
+        subject = f"Your OTP for {event_name}"
+        body = f"""
+Dear Guest,
+
+Your OTP for event "{event_name}" is: {otp}
+
+This OTP is valid for 10 minutes.
+
+Enter this OTP at: {self.frontend_url}/portal/verify-otp?event_id={event_id}&email={to_email}
+
+Best regards,
+PhotoMall AI Team
+"""
+        return await self.send_email(to_email, subject, body)
 
     async def notify_admin(self, admin_email: str, event_name: str, event_id: int, photo_count: int, face_count: int):
         subject = f"Tagging Complete - {event_name}"
