@@ -2,15 +2,10 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createBrowserClient } from '@supabase/ssr';
-import { Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function AuthCallback() {
   const router = useRouter();
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -18,29 +13,26 @@ export default function AuthCallback() {
       
       if (error) {
         console.error('Callback error:', error);
-        router.push('/auth?error=google_login_failed');
+        router.push('/?error=auth_failed');
         return;
       }
       
       if (session) {
-        localStorage.setItem('access_token', session.access_token);
-        document.cookie = `token=${session.access_token}; path=/`;
-        localStorage.setItem('user_email', session.user.email || '');
-        localStorage.setItem('user_name', session.user.user_metadata?.full_name || '');
+        localStorage.setItem('supabase_token', session.access_token);
         router.push('/admin');
       } else {
-        router.push('/auth?error=no_session');
+        router.push('/?error=no_session');
       }
     };
 
     handleCallback();
-  }, [router, supabase]);
+  }, [router]);
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <Loader2 className="animate-spin text-blue-500 mx-auto" size={48} />
-        <p className="mt-4 text-white">Completing Google sign in...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Completing sign in...</p>
       </div>
     </div>
   );
