@@ -34,9 +34,9 @@ def get_db():
 # PYDANTIC MODELS
 # ============================================================================
 class SignupRequest(BaseModel):
-    name: str
-    email: EmailStr
-    password: str
+    email: str
+    name: str = None
+    clerk_id: str = None
 
 
 class LoginRequest(BaseModel):
@@ -82,46 +82,30 @@ def decode_access_token(token: str) -> int:
 # ============================================================================
 # AUTH ENDPOINTS
 # ============================================================================
-@router.post("/signup", response_model=TokenResponse)
-def signup(payload: SignupRequest, db: Session = Depends(get_db)):
-    """
-    Create new user account
-    """
-    name = payload.name.strip()
-    email = payload.email.strip().lower()
-    password = payload.password
-    
-    if not name or not password:
-        raise HTTPException(status_code=400, detail="Name and password are required")
-    
-    if len(password) < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
-
-    # Check if user already exists
-    user = db.query(User).filter(User.email == email).first()
-    if user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Create new user
-    new_user = User(
-        name=name,
-        email=email,
-        password=get_hashed_password(password),
-        role="photographer"  # Default role for new users
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    # Create access token
-    access_token = create_access_token(new_user.id)
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user_id": new_user.id,
-        "name": new_user.name
-    }
+@router.post("/signup")
+def signup(request: SignupRequest, db: Session = Depends(get_db)):
+    try:
+        # Check if user exists
+        existing_user = db.query(User).filter(User.email == request.email).first()
+        if existing_user:
+            return {"success": True, "message": "User already exists", "user_id": existing_user.id}
+        
+        # Create new user
+        new_user = User(
+            email=request.email,
+            name=request.name or request.email.split('@')[0],
+            clerk_id=request.clerk_id,
+            role="admin" if request.email == "govindgautam9079077974@gmail.com" else "user"
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        return {"success": True, "message": "User created", "user_id": new_user.id}
+    except Exception as e:
+        db.rollback()
+        print(f"Signup error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/login")
