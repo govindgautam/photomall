@@ -27,7 +27,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+  const BACKEND_URL = '';
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');

@@ -13,7 +13,7 @@ export default function PortalAccessPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [showEvents, setShowEvents] = useState(false);
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+  const BACKEND_URL = '';
 
   const handleAccess = async (e: React.FormEvent) => {
     e.preventDefault();

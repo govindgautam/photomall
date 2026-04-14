@@ -37,7 +37,7 @@ export default function AdminGallery({ params }: { params: Promise<{ eventId: st
     const [showShareModal, setShowShareModal] = useState(false);
     const [copied, setCopied] = useState(false);
 
-    const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+    const BACKEND_URL = '';
 
     // Stable Guest URL for QR Code
     const guestUrl = useMemo(() => {

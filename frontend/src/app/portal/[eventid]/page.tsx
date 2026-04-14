@@ -228,7 +228,7 @@ export default function PortalPage() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+  const BACKEND_URL = '';
 
 useEffect(() => {
     if (verified) {

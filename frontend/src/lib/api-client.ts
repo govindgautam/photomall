@@ -256,7 +256,7 @@ export const apiClient = {
         if (path.startsWith('http')) return path;
 
         const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-        // For images, use direct backend URL (static files)
-        return `${DIRECT_BACKEND_URL}/${cleanPath}`;
+        // For images, use relative relative paths to rely on rewrites (static files)
+        return `/${cleanPath}`;
     }
 };

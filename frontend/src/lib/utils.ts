@@ -13,7 +13,7 @@ export const getImageUrl = (url: string | null | undefined): string => {
     return url;
   }
   
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+  const backendUrl = '';
   
   // Debug logging (remove in production)
   if (process.env.NODE_ENV === 'development') {
