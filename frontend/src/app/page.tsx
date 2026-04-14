@@ -79,10 +79,39 @@ export default function GuestSearch() {
         </Link>
         <UserButton />
       </div>
-      {/* Rest of your guest search UI */}
       <div className="max-w-xl mx-auto bg-white rounded-3xl shadow-2xl p-8">
-        <h1 className="text-2xl font-bold">Find My Photos</h1>
-        {/* Your existing search form */}
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-black text-slate-800">Find My Photos</h1>
+          <p className="text-slate-500">AI face matching</p>
+        </div>
+        <EventIdInput
+          label="Event ID"
+          value={eventId}
+          onChange={(e) => setEventId(e.target.value)}
+          className="w-full p-4 bg-slate-50 border-2 rounded-2xl"
+        />
+        <div className="mt-6">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="w-full p-4 border-2 rounded-2xl"
+          />
+        </div>
+        <button
+          onClick={handleSearch}
+          disabled={loading}
+          className="w-full mt-6 bg-blue-600 text-white py-4 rounded-2xl font-bold"
+        >
+          {loading ? 'Searching...' : 'Find My Photos'}
+        </button>
+        {results.length > 0 && (
+          <div className="mt-8 grid grid-cols-2 gap-4">
+            {results.map((photo) => (
+              <img key={photo.id} src={apiClient.getImageUrl(photo.url)} alt="" className="rounded-lg" />
+            ))}
+          </div>
+        )}
       </div>
     </main>
   );

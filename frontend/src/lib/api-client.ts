@@ -255,8 +255,9 @@ export const apiClient = {
         
         if (path.startsWith('http')) return path;
 
-        let cleanPath = path.replace(/\\/g, '/');
-        // Ensure path starts with a single slash for relative routing through Vercel's proxy
-        return cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
+        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+        // Use backend URL for images
+        const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io';
+        return `${BACKEND_URL}/${cleanPath}`;
     }
 };
