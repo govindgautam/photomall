@@ -116,40 +116,40 @@ export default function AdminDashboard() {
 
   // --- Quick Share Function ---
   const handleQuickShare = async (eventIdToShare: string) => {
-    const email = prompt('Enter guest email address to share this event:');
-    if (!email) return;
+  const email = prompt('Enter guest email address to share this event:');
+  if (!email) return;
+  
+  if (!email.includes('@') || !email.includes('.')) {
+    setQuickShareMessage({ type: 'error', text: '❌ Please enter a valid email address' });
+    setTimeout(() => setQuickShareMessage(null), 3000);
+    return;
+  }
+  
+  try {
+    // ✅ SIRF YAHAN CHANGE - BACKEND_URL HATAYA
+    const response = await fetch(`/api/py/email/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, event_id: parseInt(eventIdToShare) })
+    });
     
-    if (!email.includes('@') || !email.includes('.')) {
-      setQuickShareMessage({ type: 'error', text: '❌ Please enter a valid email address' });
-      setTimeout(() => setQuickShareMessage(null), 3000);
-      return;
-    }
+    const data = await response.json();
     
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/py/email/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, event_id: parseInt(eventIdToShare) })
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
-        const successText = `✅ OTP sent to ${email}\n\nShare link: ${window.location.origin}/portal/event/${eventIdToShare}?access=${email}`;
-        setQuickShareMessage({ type: 'success', text: successText });
-        setTimeout(() => setQuickShareMessage(null), 5000);
-      } else {
-        const errorText = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || 'Failed to send OTP');
-        setQuickShareMessage({ type: 'error', text: errorText });
-        setTimeout(() => setQuickShareMessage(null), 3000);
-      }
-    } catch (err: any) {
-      const errorText = err.message || 'Network error. Please try again.';
+    if (response.ok && data.success) {
+      const successText = `✅ OTP sent to ${email}\n\nShare link: ${window.location.origin}/portal/event/${eventIdToShare}?access=${email}`;
+      setQuickShareMessage({ type: 'success', text: successText });
+      setTimeout(() => setQuickShareMessage(null), 5000);
+    } else {
+      const errorText = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || 'Failed to send OTP');
       setQuickShareMessage({ type: 'error', text: errorText });
       setTimeout(() => setQuickShareMessage(null), 3000);
     }
-  };
-  
+  } catch (err: any) {
+    const errorText = err.message || 'Network error. Please try again.';
+    setQuickShareMessage({ type: 'error', text: errorText });
+    setTimeout(() => setQuickShareMessage(null), 3000);
+  }
+};
   // --- Real-Time Data Sync ---
   const refreshData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
