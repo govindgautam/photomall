@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/py/:path*",
-      "destination": "http://trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io/api/py/:path*"
+      "destination": "http://c83oyu2xr61m93vmqck3r3jg.98.89.25.154.sslip.io/api/py/:path*"
     },
     {
       "source": "/uploads/:path*",
-      "destination": "http://trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io/uploads/:path*"
+      "destination": "http://c83oyu2xr61m93vmqck3r3jg.98.89.25.154.sslip.io/uploads/:path*"
     }
   ]
 }

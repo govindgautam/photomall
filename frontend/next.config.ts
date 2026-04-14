@@ -4,7 +4,7 @@ import type { NextConfig } from "next";
 const backend =
   process.env.BACKEND_URL?.replace(/\/$/, "") || 
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
-  "http://trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io";
+  "http://c83oyu2xr61m93vmqck3r3jg.98.89.25.154.sslip.io";
 
 const nextConfig: NextConfig = {
   images: {
@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "http",
-        hostname: "trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io",
+        hostname: "c83oyu2xr61m93vmqck3r3jg.98.89.25.154.sslip.io",
         pathname: "/uploads/**",
       },
       {

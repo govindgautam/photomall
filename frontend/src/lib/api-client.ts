@@ -257,7 +257,7 @@ export const apiClient = {
 
         const cleanPath = path.startsWith('/') ? path.substring(1) : path;
         // Use backend URL for images
-        const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io';
+        const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://c83oyu2xr61m93vmqck3r3jg.98.89.25.154.sslip.io';
         return `${BACKEND_URL}/${cleanPath}`;
     }
 };
