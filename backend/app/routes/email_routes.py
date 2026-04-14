@@ -44,7 +44,7 @@ def get_db():
 # ==================== OTP Endpoints ====================
 
 @router.post("/send-otp", response_model=OTPResponse)
-def send_otp(
+async def send_otp(
     request: SendOTPRequest,
     db: Session = Depends(get_db)
 ):
@@ -75,12 +75,28 @@ def send_otp(
         db.commit()
         
         # Return OTP directly (skip email for now)
-        return OTPResponse(
-            success=True,
-            message=f"✅ OTP: {otp_code} (Valid for 10 minutes. Email sending disabled for testing)",
+        from app.services.email_notification import email_notification_service
+        email_sent = await email_notification_service.send_otp_email(
+            to_email=request.email,
             event_name=event.name,
-            event_id=event.id
+            otp=otp_code,
+            event_id=request.event_id
         )
+
+        if email_sent:
+            return OTPResponse(
+                success=True,
+                message=f"✅ OTP sent to {request.email}. Valid for 10 minutes.",
+                event_name=event.name,
+                event_id=event.id
+            )
+        else:
+            return OTPResponse(
+                success=True,
+                message=f"⚠️ OTP: {otp_code} (Email failed. Use this code)",
+                event_name=event.name,
+                event_id=event.id
+            )
         
     except Exception as e:
         print(f"Error in send_otp: {e}")

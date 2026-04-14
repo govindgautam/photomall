@@ -62,7 +62,7 @@ export default function AdminDashboard() {
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+  // BACKEND_URL removed - using relative URLs with Vercel rewrites
 
   const closeWs = useCallback(() => {
     wsCompleteRef.current = true;
@@ -126,7 +126,6 @@ export default function AdminDashboard() {
   }
   
   try {
-    // ✅ SIRF YAHAN CHANGE - BACKEND_URL HATAYA
     const response = await fetch(`/api/py/email/send-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -399,7 +398,7 @@ useEffect(() => {
         formData.append('files', file);
       });
 
-      const response = await fetch(`${BACKEND_URL}/api/py/events/${eventId}/upload`, {
+      const response = await fetch(`/api/py/events/${eventId}/upload`, {
         method: 'POST',
         body: formData,
       });
