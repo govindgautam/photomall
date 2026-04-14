@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.1.0",
     "@types/react-webcam": "^1.1.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^0.577.0",
