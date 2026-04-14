@@ -2,10 +2,13 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
 // Public routes - jinhe bina login ke access kiya ja sakta hai
 const isPublicRoute = createRouteMatcher([
-  '/',                    // Homepage (login page)
-  '/find-my-photos(.*)',  // Guest photo search
-  '/portal(.*)',          // Guest portal for events
-  '/api(.*)',             // API routes
+  '/',
+  '/auth(.*)',
+  '/sign-in(.*)',
+  '/sign-up(.*)',
+  '/find-my-photos(.*)',
+  '/portal(.*)',
+  '/api(.*)',
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
