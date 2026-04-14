@@ -48,9 +48,11 @@ async rewrites() {
   ]
 },
   reactStrictMode: false, // Loop fix ke liye ye sahi hai
+  // @ts-expect-error - eslint is a valid config property
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // @ts-expect-error - typescript is a valid config property
   typescript: {
     ignoreBuildErrors: true,
   },

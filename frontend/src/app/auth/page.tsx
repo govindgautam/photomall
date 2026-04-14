@@ -17,8 +17,8 @@ export default function AuthPage() {
             footerActionLink: "text-blue-600 hover:text-blue-700"
           }
         }}
-        redirectUrl="/admin"
-        signUpUrl="/sign-up"
+        fallbackRedirectUrl="/admin"
+        signUpForceRedirectUrl="/sign-up"
       />
     </div>
   );
