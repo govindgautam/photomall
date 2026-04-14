@@ -256,10 +256,7 @@ export const apiClient = {
         if (path.startsWith('http')) return path;
 
         let cleanPath = path.replace(/\\/g, '/');
-        cleanPath = cleanPath.startsWith('/') ? cleanPath.substring(1) : cleanPath;
-        
-        // ✅ Force the absolute remote URL for images to completely bypass Next.js rewrites and Vercel cache
-        const ABSOLUTE_BACKEND_URL = 'http://trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io';
-        return `${ABSOLUTE_BACKEND_URL}/${cleanPath}`;
+        // Ensure path starts with a single slash for relative routing through Vercel's proxy
+        return cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
     }
 };
