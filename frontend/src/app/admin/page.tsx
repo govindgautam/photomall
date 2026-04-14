@@ -223,17 +223,20 @@ export default function AdminDashboard() {
   }, [refreshData, loading]);
 
   // --- WebSocket initialization ---
-  useEffect(() => {
-    const normalizedEventId = eventId.trim();
-    if (!normalizedEventId) return;
-    if (!loading) return;
+  // --- WebSocket initialization ---
+useEffect(() => {
+  const normalizedEventId = eventId.trim();
+  if (!normalizedEventId) return;
+  if (!loading) return;
 
-    ingestionActiveRef.current = true;
-    wsCompleteRef.current = false;
-    reconnectAttemptsRef.current = 0;
+  ingestionActiveRef.current = true;
+  wsCompleteRef.current = false;
+  reconnectAttemptsRef.current = 0;
 
-    const wsUrl = `ws://127.0.0.1:8000/api/py/ws/ingestion/${normalizedEventId}`;
-    console.log(`[WebSocket] Initializing: ${wsUrl}`);
+  // ✅ FIXED: Dynamic WebSocket URL
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/py/ws/ingestion/${normalizedEventId}`;
+  console.log(`[WebSocket] Initializing: ${wsUrl}`);
 
     const connect = () => {
       const ws = new WebSocket(wsUrl);
