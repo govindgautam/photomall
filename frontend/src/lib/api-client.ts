@@ -250,14 +250,17 @@ export const apiClient = {
 
     getImageUrl: (path: string) => {
         if (!path || path === 'undefined' || typeof path !== 'string') {
-            return 'https://placehold.co/400x600/1e293b/475569?text=Invalid+Path';
+            return 'https://placehold.co/400x600/1e293b/475569?text=No+Image';
         }
         
         if (path.startsWith('http')) return path;
-
-        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-        // Use backend URL for images
-        const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://c83oyu2xr61m93vmqck3r3jg.98.89.25.154.sslip.io';
-        return `${BACKEND_URL}/${cleanPath}`;
+        if (path.startsWith('data:')) return path;
+        
+        const cleanPath = path.replace(/^\/+/, '');
+        const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://trs60cqg66wgqb6taap83nz6.98.89.25.154.sslip.io';
+        
+        // Ensure backend URL doesn't have trailing slash
+        const baseUrl = BACKEND_URL.replace(/\/$/, '');
+        return `${baseUrl}/uploads/${cleanPath}`;
     }
 };

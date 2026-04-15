@@ -84,6 +84,31 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Mount uploads folder for serving images
+uploads_path = os.path.join(os.path.dirname(__file__), "..", "uploads")
+if os.path.exists(uploads_path):
+    app.mount("/uploads", StaticFiles(directory=uploads_path), name="uploads")
+    print(f"✅ Static files mounted from: {uploads_path}")
+else:
+    os.makedirs(uploads_path, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=uploads_path), name="uploads")
+    print(f"✅ Created and mounted uploads folder: {uploads_path}")
+
+# In backend/app/main.py at startup
+@app.on_event("startup")
+async def startup_event():
+    # Ensure uploads directory exists
+    uploads_dir = "uploads"
+    if not os.path.exists(uploads_dir):
+        os.makedirs(uploads_dir)
+        print(f"✅ Created uploads directory: {uploads_dir}")
+    
+    # Create event subdirectories if needed
+    events_dir = os.path.join(uploads_dir, "events")
+    if not os.path.exists(events_dir):
+        os.makedirs(events_dir)
+        print(f"✅ Created events directory: {events_dir}")
+
 # --- Rest of the code ---
 
 # --- Global Exception Middleware ---
@@ -340,7 +365,6 @@ if not os.path.exists(static_qr_path):
     os.makedirs(static_qr_path, exist_ok=True)
 
 # Mount static directories
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.mount("/storage", StaticFiles(directory="storage"), name="storage")
 app.mount("/static/qrcodes", StaticFiles(directory="static/qrcodes"), name="qrcodes")
 
